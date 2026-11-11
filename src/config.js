@@ -59,7 +59,7 @@ export function loadConfig(env = process.env) {
       ttsVoice: env.TTS_VOICE || 'onyx',
       elevenKey: env.ELEVENLABS_API_KEY || '',
       elevenVoice: env.ELEVENLABS_VOICE_ID || '',
-      elevenModel: env.ELEVENLABS_MODEL || 'eleven_multilingual_v2',
+      elevenModel: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5',
     },
   };
 }
