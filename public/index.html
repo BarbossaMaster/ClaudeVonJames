@@ -51,12 +51,10 @@
   .core { width: min(78vw, 320px); aspect-ratio: 1; border-radius: 50%; padding: 0; display: block; }
   .core canvas { width: 100%; height: 100%; display: block; }
   #status { color: var(--muted); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; min-height: 1.4em; text-align: center; }
-  #heard { font-size: 17px; font-weight: 300; min-height: 1.5em; text-align: center; max-width: 30ch; margin-top: 6px; }
 
   #log { width: 100%; max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; max-height: 30dvh; overflow-y: auto; padding: 4px 0 8px; scrollbar-width: none; }
   #log::-webkit-scrollbar { display: none; }
-  .msg { max-width: 88%; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
-  .msg.me { align-self: flex-end; color: var(--muted); text-align: right; }
+  .msg { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
   .msg.jarvis { align-self: flex-start; padding-left: 12px; border-left: 1px solid var(--green); }
 
   .doc { align-self: flex-start; display: flex; align-items: stretch; max-width: 92%; border: 1px solid var(--faint); border-radius: 10px; font-size: 14px; overflow: hidden; }
@@ -107,7 +105,6 @@
 <main>
   <button class="core" id="orb" data-state="idle" aria-label="Falar com o Jarvis"><canvas id="viz"></canvas></button>
   <div id="status">Toque para falar</div>
-  <div id="heard" aria-live="polite"></div>
 </main>
 
 <div id="log" aria-live="polite"></div>
@@ -136,7 +133,7 @@
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const orb = $('orb'), statusEl = $('status'), heardEl = $('heard'), logEl = $('log');
+  const orb = $('orb'), statusEl = $('status'), logEl = $('log');
   const mem = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
@@ -151,12 +148,13 @@
     state = s; orb.dataset.state = s;
     statusEl.textContent = label ?? ({ idle: handsFree ? `Diga "${assistant}"` : 'Toque para falar', listening: 'Ouvindo', thinking: 'Pensando', speaking: 'Falando' })[s];
   };
-  const addMsg = (who, text) => {
+  // A tela mostra só a última resposta do assistente (e os PDFs dela). O que o usuário fala não aparece.
+  function showReply(text, documents = []) {
     const d = document.createElement('div');
-    d.className = 'msg ' + who; d.textContent = text;
-    logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
-  };
-
+    d.className = 'msg jarvis'; d.textContent = text;
+    logEl.replaceChildren(d, ...documents.map((x) => docLink(x)));
+    logEl.scrollTop = 0;
+  }
   const DOC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>';
   const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 7l4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
   const canShareFiles = (() => {
@@ -303,54 +301,86 @@
     if (playerUnlocked) return; playerUnlocked = true;
     player.src = SILENCE; player.play().catch(() => {});
   }
-  function speakBrowser(text) {
+  // A fala sempre termina por um destes caminhos: o áudio acabou, o tempo máximo estourou
+  // ou o usuário interrompeu. Sem isso, um evento perdido no iPhone travava o app em "Falando".
+  let endSpeech = null, lastUrl = null;
+  function speak(text) {
     return new Promise((resolve) => {
-      if (!synth) return resolve();
-      synth.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'pt-BR'; if (voice) u.voice = voice; u.rate = 1.05; u.pitch = .9;
-      u.onend = u.onerror = () => resolve();
-      synth.speak(u);
-    });
-  }
-  async function speak(text) {
-    if (!serverVoice) return speakBrowser(text);
-    try {
-      const res = await fetch('/api/speak', {
+      let done = false, timer = null;
+      const finish = () => {
+        if (done) return; done = true;
+        clearTimeout(timer); endSpeech = null;
+        player.onended = player.onerror = player.onloadedmetadata = null;
+        resolve();
+      };
+      const guard = (ms) => { clearTimeout(timer); timer = setTimeout(finish, ms); };
+      endSpeech = finish;
+      guard(15000 + text.length * 90);
+
+      const browser = () => {
+        if (done) return;
+        if (!synth) return finish();
+        synth.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'pt-BR'; if (voice) u.voice = voice; u.rate = 1.05; u.pitch = .9;
+        u.onend = u.onerror = finish;
+        synth.speak(u);
+        guard(4000 + text.length * 95);
+      };
+      if (!serverVoice) return browser();
+
+      fetch('/api/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
         body: JSON.stringify({ text }),
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const url = URL.createObjectURL(await res.blob());
-      await new Promise((resolve, reject) => {
-        player.onended = resolve; player.onpause = resolve; player.onerror = reject;
-        player.src = url; player.defaultPlaybackRate = voiceRate; player.playbackRate = voiceRate; player.play().catch(reject);
-      }).finally(() => URL.revokeObjectURL(url));
-    } catch {
-      return speakBrowser(text); // sem voz do servidor, usa a do aparelho
-    }
+      })
+        .then((res) => (res.ok ? res.blob() : Promise.reject(new Error('HTTP ' + res.status))))
+        .then((blob) => {
+          if (done) return;
+          if (lastUrl) URL.revokeObjectURL(lastUrl);
+          lastUrl = URL.createObjectURL(blob);
+          player.onended = finish;
+          player.onerror = browser;
+          player.onloadedmetadata = () => {
+            if (Number.isFinite(player.duration)) guard((player.duration / voiceRate) * 1000 + 2500);
+          };
+          player.src = lastUrl; player.defaultPlaybackRate = voiceRate; player.playbackRate = voiceRate;
+          return player.play();
+        })
+        .catch(browser); // sem voz do servidor, usa a do aparelho
+    });
   }
-  const stopSpeaking = () => { synth && synth.cancel(); player.pause(); };
+  function stopSpeaking() {
+    try { synth && synth.cancel(); } catch {}
+    try { player.pause(); } catch {}
+    if (endSpeech) endSpeech();
+  }
 
   // ---------- Voz: escuta ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, listening = false, heard = '', silenceTimer = null, endTimer = null;
+  let rec = null, listening = false, retries = 0;
   const SILENCE_MS = 1600;   // pausa que encerra a fala
   const NO_SPEECH_MS = 8000; // desiste se ninguém falar
   function startListening() {
     if (!SR || listening || state === 'thinking' || state === 'speaking') return;
+    // Encerra de vez qualquer sessão anterior, para ela não disparar eventos atrasados.
+    if (rec) { rec.onresult = rec.onerror = rec.onend = null; try { rec.abort(); } catch {} }
     const r = (rec = new SR());
     r.lang = 'pt-BR'; r.interimResults = true; r.continuous = false;
-    heard = ''; listening = true; setState('listening'); heardEl.textContent = '';
-    let done = false;
+    listening = true; setState('listening');
+    let heard = '', done = false, failed = '', silenceTimer = null, endTimer = null;
     const finish = () => {
       if (done) return; done = true;
       clearTimeout(silenceTimer); clearTimeout(endTimer);
+      r.onresult = r.onerror = r.onend = null;
+      if (rec !== r) return; // já existe outra sessão no lugar desta
       listening = false;
       const said = heard.trim();
-      if (said) return onHeard(said);
+      if (said) { retries = 0; return onHeard(said); }
       if (state === 'listening') setState('idle');
+      // O iPhone às vezes recusa o microfone logo depois de tocar áudio; tenta de novo sozinho.
+      if (/aborted|audio-capture|network/.test(failed) && retries < 2) { retries++; return setTimeout(startListening, 450); }
+      retries = 0;
       if (handsFree) setTimeout(startListening, 350);
     };
     // O Safari do iPhone muitas vezes não encerra sozinho nem marca o resultado como final,
@@ -362,61 +392,60 @@
         endTimer = setTimeout(finish, 1200); // se o onend não vier, encerra mesmo assim
       }, ms);
     };
+    r.stopNow = () => stopSoon(0);
     r.onresult = (e) => {
       let text = '';
       for (const res of e.results) text += res[0].transcript;
-      heard = text; heardEl.textContent = text;
+      heard = text;
       stopSoon(SILENCE_MS);
     };
     r.onerror = (e) => {
+      failed = e.error || 'erro';
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         handsFree = false; $('handsfree').setAttribute('aria-pressed', 'false');
         heard = ''; finish(); setState('idle', 'Permita o microfone');
       }
     };
     r.onend = finish;
-    try { r.start(); stopSoon(NO_SPEECH_MS); } catch { done = true; listening = false; setState('idle'); }
+    try { r.start(); stopSoon(NO_SPEECH_MS); } catch { failed = 'aborted'; finish(); }
   }
-  function stopListening() {
-    clearTimeout(silenceTimer);
-    try { rec && rec.stop(); } catch {}
-    // garante a saída do estado "ouvindo" mesmo se o navegador não avisar
-    const r = rec; clearTimeout(endTimer);
-    endTimer = setTimeout(() => r && r.onend && r.onend(), 1200);
-  }
+  function stopListening() { if (rec && rec.stopNow) rec.stopNow(); }
 
   function onHeard(said) {
     if (handsFree) {
       // Em mãos livres, só responde se chamarem pelo nome ou for continuação recente da conversa.
       const called = said.toLowerCase().includes(assistant.toLowerCase());
       const followUp = Date.now() - lastReplyAt < 20000;
-      if (!called && !followUp) { heardEl.textContent = ''; setState('idle'); return setTimeout(startListening, 250); }
+      if (!called && !followUp) { setState('idle'); return setTimeout(startListening, 250); }
     }
     send(said, 'voice');
   }
 
   async function send(text, channel) {
-    addMsg('me', text); heardEl.textContent = ''; setState('thinking');
+    setState('thinking');
     try {
       const { reply, documents = [] } = await api('/api/chat', { text, channel });
-      addMsg('jarvis', reply);
-      for (const d of documents) logEl.appendChild(docLink(d));
-      logEl.scrollTop = logEl.scrollHeight;
+      showReply(reply, documents);
       if (channel === 'voice') { setState('speaking'); await speak(reply); }
       lastReplyAt = Date.now();
     } catch (e) {
-      if (e.message !== 'unauthorized') addMsg('jarvis', 'Sem conexão com o servidor agora.');
+      if (e.message !== 'unauthorized') showReply('Sem conexão com o servidor agora.');
     }
-    setState('idle'); refresh();
-    if (handsFree) setTimeout(startListening, 300);
+    // Se o usuário interrompeu a fala e já está falando de novo, não mexe no estado.
+    if (state === 'thinking' || state === 'speaking') setState('idle');
+    refresh();
+    if (handsFree && !listening) setTimeout(startListening, 300);
   }
 
   // ---------- Interface ----------
   orb.addEventListener('click', () => {
     unlockAll();
-    if (state === 'speaking') { stopSpeaking(); return; }
     if (!SR) return setState('idle', 'Sem voz neste navegador');
-    listening ? stopListening() : startListening();
+    if (state === 'thinking') return;
+    // Tocar enquanto ele fala interrompe e já começa a ouvir.
+    if (state === 'speaking') { stopSpeaking(); setState('idle'); retries = 0; return startListening(); }
+    if (listening) return stopListening();
+    retries = 0; startListening();
   });
   $('handsfree').addEventListener('click', () => {
     unlockAll();
