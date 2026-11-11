@@ -401,13 +401,14 @@
       retries = 0;
       if (handsFree) setTimeout(startListening, 350);
     };
-    // O Safari do iPhone muitas vezes não encerra sozinho nem marca o resultado como final,
-    // então quem decide que a fala acabou é o silêncio.
+    // Quem decide que a fala acabou é o silêncio, e a sessão é derrubada na hora com abort().
+    // Com stop(), o iPhone mantinha o microfone aberto por vários segundos (ouvindo até a resposta
+    // do próprio assistente), e a escuta seguinte só funcionava depois que essa sessão antiga morria.
     const stopSoon = (ms) => {
       clearTimeout(silenceTimer);
       silenceTimer = setTimeout(() => {
-        try { r.stop(); } catch {}
-        endTimer = setTimeout(finish, 1200); // se o onend não vier, encerra mesmo assim
+        try { r.abort(); } catch {}
+        finish();
       }, ms);
     };
     r.stopNow = () => stopSoon(0);
