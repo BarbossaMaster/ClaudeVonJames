@@ -108,10 +108,18 @@ export function createJarvis({ store, config, whatsapp, speech, brain, log = con
     });
   }
 
-  return { notifyOwner, ingestEvent, handleWhatsApp };
+  /** Manda um PDF ao WhatsApp do dono. Devolve uma frase com o que aconteceu, para o modelo relatar a verdade. */
+  async function sendDocumentToOwner(doc) {
+    if (!ownerPhone) return 'não enviado: o número do dono não está configurado';
+    if (!whatsapp.live) return 'não enviado: o WhatsApp ainda não está conectado; o PDF está disponível no app';
+    await whatsapp.sendDocument(ownerPhone, doc.buffer, doc.filename, doc.title);
+    return 'enviado ao WhatsApp do dono';
+  }
+
+  return { notifyOwner, ingestEvent, handleWhatsApp, sendDocumentToOwner };
 }
 
-export function createApp({ store, config, whatsapp, speech, brain, jarvis, log = console.error }) {
+export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, log = console.error }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -156,7 +164,9 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, log 
       const text = String(req.body?.text ?? '').trim();
       if (!text) return res.status(400).json({ error: 'text é obrigatório' });
       const channel = req.body?.channel === 'voice' ? 'voice' : 'text';
-      res.json({ reply: await brain.owner(text.slice(0, 4000), { channel }) });
+      const created = [];
+      const reply = await brain.owner(text.slice(0, 4000), { channel, documents: created });
+      res.json({ reply, documents: created });
     }),
   );
 
@@ -172,6 +182,22 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, log 
       res.set({ 'Content-Type': audio.mime, 'Cache-Control': 'no-store' }).send(audio.buffer);
     }),
   );
+
+  // Documentos gerados. O endereço /d/<id>.pdf funciona como chave: só abre quem recebeu o link.
+  app.get('/api/docs', auth, (_req, res) => res.json({ documents: documents ? documents.list() : [] }));
+  app.get('/d/:file', (req, res) => {
+    const id = String(req.params.file).replace(/\.pdf$/i, '');
+    const doc = /^[\w-]{16,}$/.test(id) && documents ? documents.read(id) : null;
+    if (!doc) return res.sendStatus(404);
+    res
+      .set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${doc.filename}"`,
+        'Cache-Control': 'private, max-age=3600',
+        'X-Robots-Tag': 'noindex',
+      })
+      .send(doc.buffer);
+  });
 
   app.get('/api/state', auth, (_req, res) => {
     res.json({

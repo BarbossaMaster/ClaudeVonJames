@@ -29,6 +29,7 @@ Como trabalhar com o dono:
 - Quando ele decidir sobre um item pendente, registre com resolve_item; se a decisão precisa chegar ao cliente, inclua a mensagem para o contato.
 - Quando ele ensinar algo sobre o negócio que ajuda a atender clientes (preço, política, prazo), guarde com remember.
 - Quando ele pedir conselho de negócio, dê uma opinião franca com recomendação clara e por onde começar, como um sócio experiente faria. Use os números reais quando ajudarem.
+- Quando ele pedir um documento, PDF, plano, proposta ou relatório para guardar ou enviar, escreva o conteúdo completo e gere com create_document. Na resposta, diga só que está pronto e onde ele encontra; não leia nem repita o conteúdo.
 - Você não movimenta dinheiro nem acessa sistemas além destas ferramentas. Se ele pedir algo fora do seu alcance, diga o que consegue fazer no lugar.
 
 Regras atuais do dono:
@@ -127,6 +128,24 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: 'create_document',
+    description:
+      'Gera um PDF com o conteúdo que você escrever (estratégia, plano, proposta, relatório, roteiro) e o deixa disponível para o dono na área Docs do app. Pode também enviar o PDF para o WhatsApp do dono. Escreva o documento completo e bem acabado, pronto para ser lido ou encaminhado.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Título do documento, curto.' },
+        content: {
+          type: 'string',
+          description:
+            'Corpo do documento em markdown simples: títulos com # e ##, listas com - ou 1., negrito com **texto**, parágrafos separados por linha em branco. Sem tabelas, sem emojis, sem repetir o título no início.',
+        },
+        send_whatsapp: { type: 'boolean', description: 'true para também enviar o PDF ao WhatsApp do dono.' },
+      },
+      required: ['title', 'content'],
+    },
+  },
+  {
     name: 'remember',
     description:
       'Guarda na base de conhecimento um fato do negócio que o dono ensinou (preço, política, prazo, como responder algo). Passa a valer no atendimento aos clientes.',
@@ -158,13 +177,23 @@ const CONTACT_TOOLS = [
   },
 ];
 
-export function createBrain({ store, config, notifyOwner, sendToContact, client, log = console.error }) {
+export function createBrain({ store, config, notifyOwner, sendToContact, documents, sendDocumentToOwner, client, log = console.error }) {
   let anthropic = client;
   const getClient = () => (anthropic ??= new Anthropic());
 
   const days = (n) => store.now() - Math.max(0.05, Number(n) || 1) * 24 * 3600 * 1000;
 
-  const ownerHandlers = {
+  const ownerHandlers = (ctx) => ({
+    create_document: async ({ title, content, send_whatsapp }) => {
+      if (!documents) throw new Error('geração de documentos indisponível');
+      const doc = await documents.create({ title, content });
+      ctx.documents.push({ title: doc.title, url: doc.url });
+      let whatsapp = 'não solicitado';
+      if (send_whatsapp || ctx.channel === 'whatsapp') {
+        whatsapp = await sendDocumentToOwner(doc).catch((e) => `falhou: ${e.message}`);
+      }
+      return { ok: true, title: doc.title, available_in_app: 'área Docs e link na conversa', whatsapp };
+    },
     get_business_snapshot: ({ period_days }) => snapshot(store, config, days(period_days)),
     list_events: ({ type, status, period_days, limit }) =>
       store
@@ -208,7 +237,7 @@ export function createBrain({ store, config, notifyOwner, sendToContact, client,
       if (!String(fact ?? '').trim()) throw new Error('fact vazio');
       return { ok: true, notes: addNote(store, fact) };
     },
-  };
+  });
 
   function contactHandlers(ctx) {
     return {
@@ -326,13 +355,13 @@ export function createBrain({ store, config, notifyOwner, sendToContact, client,
 
   return {
     /** Conversa com o dono (voz no app, texto ou WhatsApp). */
-    async owner(text, { channel = 'text' } = {}) {
+    async owner(text, { channel = 'text', documents: created = [] } = {}) {
       const rules = getRules(store, config);
       try {
         return await run({
           system: ownerSystem(config, rules, loadKnowledge(config.knowledgeDir, store)),
           tools: OWNER_TOOLS,
-          handlers: ownerHandlers,
+          handlers: ownerHandlers({ channel: channel === 'voice' || channel === 'text' ? channel : 'whatsapp', documents: created }),
           conversationId: 'owner',
           text,
           channel,

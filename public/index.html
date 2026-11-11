@@ -59,6 +59,14 @@
   .msg.me { align-self: flex-end; color: var(--muted); text-align: right; }
   .msg.jarvis { align-self: flex-start; padding-left: 12px; border-left: 1px solid var(--green); }
 
+  .doc { align-self: flex-start; display: inline-flex; align-items: center; gap: 10px; max-width: 88%; padding: 10px 14px; border: 1px solid var(--faint); border-radius: 10px; color: var(--text); text-decoration: none; font-size: 14px; }
+  .doc svg { width: 16px; height: 16px; flex: none; color: var(--green); }
+  .doc span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc small { color: var(--muted); flex: none; }
+  #doclist { display: flex; flex-direction: column; gap: 8px; max-height: 50dvh; overflow-y: auto; }
+  #doclist .doc { max-width: 100%; align-self: stretch; }
+  .close { margin-top: 16px; color: var(--muted); font-size: 13px; }
+
   form.bar { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 620px; margin: 6px auto 16px; border-bottom: 1px solid var(--faint); transition: border-color .2s; }
   form.bar:focus-within { border-color: var(--green); }
   input[type=text], input[type=password] {
@@ -82,6 +90,7 @@
   <div class="brand"><i></i><h1 id="name">Jarvis</h1></div>
   <div class="actions">
     <button class="toggle" id="handsfree" aria-pressed="false" title="Fica ouvindo e responde quando você disser o nome dele"><span class="sw"></span>Mãos livres</button>
+    <button id="docsbtn" title="Documentos gerados">Docs</button>
     <button id="logout" title="Trocar token">Sair</button>
   </div>
 </header>
@@ -104,6 +113,13 @@
   <input type="text" id="text" placeholder="Escreva aqui" enterkeyhint="send" aria-label="Mensagem">
   <button class="send" type="submit" aria-label="Enviar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
 </form>
+
+<dialog id="docs">
+  <h2>Documentos</h2>
+  <p id="docsempty">Nenhum documento ainda. Peça um PDF ao assistente.</p>
+  <div id="doclist"></div>
+  <button class="close" id="docsclose">Fechar</button>
+</dialog>
 
 <dialog id="login">
   <h2>Acesso</h2>
@@ -138,6 +154,18 @@
     d.className = 'msg ' + who; d.textContent = text;
     logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
   };
+
+  const DOC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>';
+  function docLink(d, withDate) {
+    const a = document.createElement('a');
+    a.className = 'doc'; a.href = d.url; a.target = '_blank'; a.rel = 'noopener';
+    a.innerHTML = DOC_ICON;
+    const s = document.createElement('span'); s.textContent = d.title; a.appendChild(s);
+    const m = document.createElement('small');
+    m.textContent = withDate && d.ts ? new Date(d.ts).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : 'PDF';
+    a.appendChild(m);
+    return a;
+  }
 
   // ---------- Núcleo visual: anéis de luz que reagem ao estado ----------
   const viz = $('viz'), g = viz.getContext('2d');
@@ -347,8 +375,10 @@
   async function send(text, channel) {
     addMsg('me', text); heardEl.textContent = ''; setState('thinking');
     try {
-      const { reply } = await api('/api/chat', { text, channel });
+      const { reply, documents = [] } = await api('/api/chat', { text, channel });
       addMsg('jarvis', reply);
+      for (const d of documents) logEl.appendChild(docLink(d));
+      logEl.scrollTop = logEl.scrollHeight;
       if (channel === 'voice') { setState('speaking'); await speak(reply); }
       lastReplyAt = Date.now();
     } catch (e) {
@@ -377,6 +407,15 @@
     const t = $('text').value.trim(); if (!t || state === 'thinking') return;
     $('text').value = ''; send(t, 'text');
   });
+  $('docsbtn').addEventListener('click', async () => {
+    $('docs').showModal();
+    try {
+      const { documents } = await api('/api/docs');
+      $('docsempty').hidden = documents.length > 0;
+      $('doclist').replaceChildren(...documents.map((d) => docLink(d, true)));
+    } catch {}
+  });
+  $('docsclose').addEventListener('click', () => $('docs').close());
   $('logout').addEventListener('click', () => { token = ''; mem.set('jarvis_token', null); askToken(''); });
 
   function askToken(err) {

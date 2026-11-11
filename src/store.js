@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS turns (
 );
 CREATE INDEX IF NOT EXISTS turns_contact ON turns(contact, id);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, title TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, ts INTEGER NOT NULL);
 `;
 
@@ -129,6 +130,18 @@ export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
       db.prepare(
         'INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
       ).run(key, JSON.stringify(value));
+    },
+
+    addDocument(id, title) {
+      db.prepare('INSERT INTO documents (id, ts, title) VALUES (?,?,?)').run(id, now(), title);
+    },
+
+    getDocument(id) {
+      return db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+    },
+
+    listDocuments(limit = 30) {
+      return db.prepare('SELECT * FROM documents ORDER BY ts DESC, rowid DESC LIMIT ?').all(limit);
     },
 
     /** true se este id já foi processado (o WhatsApp reenvia webhooks). */

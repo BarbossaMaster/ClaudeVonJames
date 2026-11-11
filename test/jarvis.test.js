@@ -136,7 +136,7 @@ test('áudio no WhatsApp: transcreve, responde em áudio; sem voz configurada pe
   const a = setup({ script: [say('Tudo em ordem, senhor.')], speech });
   await a.jarvis.handleWhatsApp({ id: 'a1', from: OWNER, type: 'audio', audioId: 'media1' });
   assert.equal(a.sent[0].audio.toString(), 'voice:Tudo em ordem, senhor.');
-  assert.equal(a.client.requests[0].tools.length, 5, 'áudio do dono usa as ferramentas do dono');
+  assert.equal(a.client.requests[0].tools.length, 6, 'áudio do dono usa as ferramentas do dono');
 
   const b = setup();
   await b.jarvis.handleWhatsApp({ id: 'a1', from: CLIENT, type: 'audio', audioId: 'media1' });
@@ -154,7 +154,7 @@ test('HTTP: token protege a API; webhook verifica; chat e eventos funcionam', as
     assert.equal(state.rules.threshold, 2000);
 
     const chat = await fetch(`${base}/api/chat`, { method: 'POST', headers: auth, body: JSON.stringify({ text: 'Olá', channel: 'voice' }) });
-    assert.deepEqual(await chat.json(), { reply: 'Às ordens.' });
+    assert.deepEqual(await chat.json(), { reply: 'Às ordens.', documents: [] });
 
     const bad = await fetch(`${base}/api/events`, { method: 'POST', headers: auth, body: JSON.stringify({ type: 'hack' }) });
     assert.equal(bad.status, 400);
@@ -258,4 +258,50 @@ test('voz mais ágil: números do dia vão no contexto e o modo rápido é opcio
   assert.equal(b.client.requests[0].speed, 'fast');
   assert.equal(b.client.requests[1].speed, undefined, 'texto não usa o modo rápido');
   assert.equal(b.config.voiceRate, 1.6, 'velocidade fica dentro do limite');
+});
+
+const DOC = { title: 'Estratégia de Instagram', content: '## Objetivo\n\nGerar **demonstrações**.\n\n- Reels 3x por semana\n- Depoimentos 🙂\n\n1. Semana um\n2. Semana dois' };
+
+test('PDF pelo app: o dono pede, o documento é gerado e abre pelo link', async () => {
+  const t = setup({ script: [use('create_document', DOC), say('Pronto, senhor. Está na área Docs.')] });
+  const { base, close } = await serve(t.app);
+  try {
+    const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+    const chat = await (await fetch(`${base}/api/chat`, { method: 'POST', headers: h, body: JSON.stringify({ text: 'faz um pdf', channel: 'voice' }) })).json();
+    assert.equal(chat.reply, 'Pronto, senhor. Está na área Docs.');
+    assert.equal(chat.documents.length, 1);
+    assert.match(chat.documents[0].url, /^\/d\/[\w-]{20,}\.pdf$/);
+
+    const pdf = await fetch(base + chat.documents[0].url);
+    assert.equal(pdf.headers.get('content-type'), 'application/pdf');
+    assert.match(pdf.headers.get('content-disposition'), /Estrategia-de-Instagram\.pdf/);
+    assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
+
+    const list = await (await fetch(`${base}/api/docs`, { headers: h })).json();
+    assert.equal(list.documents[0].title, 'Estratégia de Instagram');
+    assert.equal((await fetch(`${base}/api/docs`)).status, 401);
+    assert.equal((await fetch(`${base}/d/naoexiste1234567890.pdf`)).status, 404);
+
+    // sem WhatsApp conectado, o modelo é informado de que não foi enviado
+    const result = JSON.parse(t.client.requests[1].messages.at(-1).content[0].content);
+    assert.equal(result.whatsapp, 'não solicitado');
+    assert.equal(t.sent.length, 0);
+  } finally {
+    await close();
+  }
+});
+
+test('PDF pelo WhatsApp: pedido feito por lá chega como documento; desconectado, avisa a verdade', async () => {
+  const a = setup({ script: [use('create_document', DOC), say('Enviei, senhor.')] });
+  a.whatsapp.live = true;
+  await a.jarvis.handleWhatsApp({ id: 'd1', from: OWNER, type: 'text', text: 'me manda um pdf da estratégia' });
+  assert.equal(a.sent[0].filename, 'Estrategia-de-Instagram.pdf');
+  assert.equal(a.sent[0].document.subarray(0, 5).toString(), '%PDF-');
+  assert.equal(a.sent[1].text, 'Enviei, senhor.');
+
+  const b = setup({ script: [use('create_document', { ...DOC, send_whatsapp: true }), say('Está no app.')] });
+  await b.brain.owner('gera e manda no whats', { channel: 'voice' });
+  const result = JSON.parse(b.client.requests[1].messages.at(-1).content[0].content);
+  assert.match(result.whatsapp, /não enviado: o WhatsApp ainda não está conectado/);
+  assert.equal(b.sent.length, 0);
 });

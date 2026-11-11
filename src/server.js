@@ -5,6 +5,8 @@ import { createSpeech } from './speech.js';
 import { createBrain } from './brain.js';
 import { createApp, createJarvis } from './app.js';
 import { startScheduler } from './briefing.js';
+import { createDocuments } from './documents.js';
+import { dirname, join } from 'node:path';
 
 const config = loadConfig();
 ensureToken(config);
@@ -14,17 +16,24 @@ const whatsapp = createWhatsApp(config.whatsapp);
 const speech = createSpeech(config.speech);
 
 // O cérebro e o orquestrador dependem um do outro (avisar o dono / falar com contato).
+const documents = createDocuments({
+  store,
+  config,
+  dir: config.dbPath === ':memory:' ? ':memory:' : join(dirname(config.dbPath), 'docs'),
+});
 const links = {};
 const brain = createBrain({
   store,
   config,
   notifyOwner: (text, meta) => links.jarvis.notifyOwner(text, meta),
   sendToContact: (to, text) => whatsapp.sendText(to, text),
+  documents,
+  sendDocumentToOwner: (doc) => links.jarvis.sendDocumentToOwner(doc),
 });
 const jarvis = createJarvis({ store, config, whatsapp, speech, brain });
 links.jarvis = jarvis;
 
-const app = createApp({ store, config, whatsapp, speech, brain, jarvis });
+const app = createApp({ store, config, whatsapp, speech, brain, jarvis, documents });
 startScheduler({ store, config, notifyOwner: jarvis.notifyOwner });
 
 app.listen(config.port, () => {

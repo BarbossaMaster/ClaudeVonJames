@@ -2,6 +2,7 @@ import { openStore } from '../src/store.js';
 import { loadConfig } from '../src/config.js';
 import { createBrain } from '../src/brain.js';
 import { createApp, createJarvis } from '../src/app.js';
+import { createDocuments } from '../src/documents.js';
 
 /** Cliente falso do Claude: devolve respostas roteirizadas e guarda as requisições. */
 export function fakeClaude(script) {
@@ -43,22 +44,26 @@ export function setup({ script = [], env = {}, speech } = {}) {
     sendText: async (to, text) => void sent.push({ to, text }),
     sendTemplate: async (to, name, lang, text) => void sent.push({ to, text, template: name }),
     sendAudio: async (to, buffer) => void sent.push({ to, audio: buffer }),
+    sendDocument: async (to, buffer, filename, caption) => void sent.push({ to, document: buffer, filename, caption }),
     downloadMedia: async () => ({ buffer: Buffer.from('ogg'), mime: 'audio/ogg' }),
     verifySignature: () => true,
   };
   const sp = speech ?? { enabled: false };
   const client = fakeClaude(script);
+  const documents = createDocuments({ store, config, dir: ':memory:' });
   const links = {};
   const quiet = () => {};
   const brain = createBrain({
     store, config, client, log: quiet,
     notifyOwner: (t) => links.jarvis.notifyOwner(t),
     sendToContact: (to, t) => whatsapp.sendText(to, t),
+    documents,
+    sendDocumentToOwner: (doc) => links.jarvis.sendDocumentToOwner(doc),
   });
   const jarvis = createJarvis({ store, config, whatsapp, speech: sp, brain, log: quiet });
   links.jarvis = jarvis;
-  const app = createApp({ store, config, whatsapp, speech: sp, brain, jarvis, log: quiet });
-  return { config, store, sent, whatsapp, client, brain, jarvis, app, advance: (ms) => (clock += ms) };
+  const app = createApp({ store, config, whatsapp, speech: sp, brain, jarvis, documents, log: quiet });
+  return { config, store, sent, whatsapp, client, brain, jarvis, app, documents, advance: (ms) => (clock += ms) };
 }
 
 export async function serve(app) {

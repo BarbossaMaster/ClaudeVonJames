@@ -77,6 +77,24 @@ export function createWhatsApp(cfg, { fetchImpl = fetch, log = console.log } = {
       });
     },
 
+    /** Envia um arquivo (PDF) como documento. */
+    async sendDocument(to, buffer, filename, caption = '') {
+      if (!live) return void log(`\n[whatsapp documento → ${to}] ${filename} (${buffer.length} bytes) ${caption}\n`);
+      const form = new FormData();
+      form.append('messaging_product', 'whatsapp');
+      form.append('type', 'application/pdf');
+      form.append('file', new Blob([buffer], { type: 'application/pdf' }), filename);
+      const up = await fetchImpl(`${base}/${cfg.phoneNumberId}/media`, { method: 'POST', headers: auth, body: form });
+      if (!up.ok) throw new Error(`WhatsApp upload ${up.status}: ${(await up.text()).slice(0, 300)}`);
+      const { id } = await up.json();
+      await call(`${cfg.phoneNumberId}/messages`, {
+        messaging_product: 'whatsapp',
+        to: digits(to),
+        type: 'document',
+        document: { id, filename, ...(caption ? { caption: caption.slice(0, 1000) } : {}) },
+      });
+    },
+
     async downloadMedia(mediaId) {
       const meta = await fetchImpl(`${base}/${mediaId}`, { headers: auth });
       if (!meta.ok) throw new Error(`WhatsApp mídia ${meta.status}`);

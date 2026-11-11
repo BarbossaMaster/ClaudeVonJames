@@ -8,6 +8,8 @@ export function loadConfig(env = process.env) {
     port: num(env.PORT, 3000),
     dbPath: env.JARVIS_DB || 'data/jarvis.db',
     knowledgeDir: env.KNOWLEDGE_DIR || 'knowledge',
+    // Endereço público do servidor, usado em links enviados por WhatsApp.
+    publicUrl: (env.PUBLIC_URL || (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : '')).replace(/\/$/, ''),
 
     assistantName: env.ASSISTANT_NAME || 'Jarvis',
     ownerName: env.OWNER_NAME || 'o dono',
