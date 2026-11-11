@@ -138,7 +138,7 @@ const OWNER_TOOLS = [
         content: {
           type: 'string',
           description:
-            'Corpo do documento em markdown simples: títulos com # e ##, listas com - ou 1., negrito com **texto**, parágrafos separados por linha em branco. Sem tabelas, sem emojis, sem repetir o título no início.',
+            'Corpo do documento em markdown simples: títulos com # e ##, listas com - ou 1., negrito com **texto**, parágrafos separados por linha em branco. Sem tabelas, sem emojis, sem repetir o título no início. O logo da marca já entra no cabeçalho.',
         },
         send_whatsapp: { type: 'boolean', description: 'true para também enviar o PDF ao WhatsApp do dono.' },
       },
@@ -269,6 +269,33 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
     };
   }
 
+  // A descrição da ferramenta de documentos lista as imagens e o formato de gráfico disponíveis.
+  let cachedOwnerTools = null;
+  function ownerTools() {
+    if (cachedOwnerTools) return cachedOwnerTools;
+    const imgs = documents?.images ?? [];
+    const extra =
+      (imgs.length
+        ? ` Para inserir uma imagem, use uma linha só com ![legenda](imagem:ID). Use imagens quando ajudarem a mostrar o que o texto descreve, sem exagero. IDs disponíveis: ${imgs.map((i) => `${i.id} (${i.description})`).join('; ')}.`
+        : '') +
+      ' Para um gráfico de barras, use um bloco assim, com números reais ou claramente apresentados como meta/estimativa:\n```grafico\ntitulo: Funil de prospecção\nunidade: lojas\nAbordadas: 115\nResponderam: 55\n```\n(unidade é opcional; use "R$" para valores em reais).';
+    cachedOwnerTools = OWNER_TOOLS.map((t) =>
+      t.name !== 'create_document'
+        ? t
+        : {
+            ...t,
+            input_schema: {
+              ...t.input_schema,
+              properties: {
+                ...t.input_schema.properties,
+                content: { ...t.input_schema.properties.content, description: t.input_schema.properties.content.description + extra },
+              },
+            },
+          },
+    );
+    return cachedOwnerTools;
+  }
+
   /** Um turno completo: monta o histórico, roda o loop de ferramentas e devolve o texto final. */
   async function run({ system, tools, handlers, conversationId, text, channel, effort, context = '', fast = false }) {
     const history = store.history(conversationId, HISTORY_TURNS);
@@ -360,7 +387,7 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
       try {
         return await run({
           system: ownerSystem(config, rules, loadKnowledge(config.knowledgeDir, store)),
-          tools: OWNER_TOOLS,
+          tools: ownerTools(),
           handlers: ownerHandlers({ channel: channel === 'voice' || channel === 'text' ? channel : 'whatsapp', documents: created }),
           conversationId: 'owner',
           text,

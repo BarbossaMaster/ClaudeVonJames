@@ -1,0 +1,14 @@
+[
+  { "id": "painel", "arquivo": "painel.jpg", "descricao": "Tela do Painel: faturamento, pedidos, ticket médio, clientes novos e resumo da prospecção" },
+  { "id": "atendimento", "arquivo": "atendimento.jpg", "descricao": "Tela de Atendimento: conversas do WhatsApp com a assistente de IA e ficha da cliente ao lado" },
+  { "id": "clientes", "arquivo": "clientes.jpg", "descricao": "Tela de Clientes: lista com etapa, preferência, origem e total comprado" },
+  { "id": "prospeccao", "arquivo": "prospeccao.jpg", "descricao": "Tela de Prospecção (atacado): funil de conversão e temperatura dos leads" },
+  { "id": "pipeline", "arquivo": "pipeline.jpg", "descricao": "Tela de Pipeline de vendas: quadro com cada loja como negócio, valor e etapa" },
+  { "id": "catalogo", "arquivo": "catalogo.jpg", "descricao": "Catálogo digital da marca: vitrine com banner da coleção" },
+  { "id": "financeiro", "arquivo": "financeiro.jpg", "descricao": "Tela do Financeiro: receita, lucro operacional, margem, a receber e projeção do caixa" },
+  { "id": "estoque", "arquivo": "estoque.jpg", "descricao": "Tela de Estoque: peças na loja e em maletas, por SKU" },
+  { "id": "revendedoras", "arquivo": "revendedoras.jpg", "descricao": "Tela de Revendedoras: ranking, maletas e acertos" },
+  { "id": "garantias", "arquivo": "garantias.jpg", "descricao": "Tela de Garantias: certificados digitais por cliente e peça" },
+  { "id": "assistente", "arquivo": "assistente.jpg", "descricao": "Tela da Assistente: sugestões de oportunidades para o negócio" },
+  { "id": "tema-escuro", "arquivo": "tema-escuro.jpg", "descricao": "Tela de Atendimento no tema escuro" }
+]

@@ -16,6 +16,9 @@ export function loadConfig(env = process.env) {
     ownerTitle: env.OWNER_TITLE || 'senhor',
     businessName: env.BUSINESS_NAME || 'o negócio',
 
+    // Cor de destaque dos PDFs (padrão: dourado da marca).
+    pdfAccent: /^#[0-9a-f]{6}$/i.test(env.PDF_ACCENT || '') ? env.PDF_ACCENT : '#B08A3C',
+
     // Token que protege o app de voz e a API de eventos.
     token: env.JARVIS_TOKEN || '',
 

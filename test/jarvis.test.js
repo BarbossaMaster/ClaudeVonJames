@@ -305,3 +305,22 @@ test('PDF pelo WhatsApp: pedido feito por lá chega como documento; desconectado
   assert.match(result.whatsapp, /não enviado: o WhatsApp ainda não está conectado/);
   assert.equal(b.sent.length, 0);
 });
+
+test('PDF com imagens e gráficos: o modelo recebe o catálogo e o PDF embute a imagem', async () => {
+  const { renderPdf, loadImageLibrary } = await import('../src/documents.js');
+  const library = loadImageLibrary('knowledge/imagens');
+  assert.ok(library.logo, 'logo encontrado');
+  assert.ok(library.images.painel, 'tela do painel no catálogo');
+  const base = { title: 'T', business: 'Astro Gold', dateLabel: 'hoje' };
+  const plain = await renderPdf({ ...base, content: 'Texto.' });
+  const rich = await renderPdf({ ...base, library, content: 'Texto.\n\n![Painel](imagem:painel)\n\n```grafico\ntitulo: Funil\nAbordadas: 115\nResponderam: 55\n```\n\n![x](imagem:naoexiste)' });
+  assert.equal(rich.subarray(0, 5).toString(), '%PDF-');
+  assert.ok(rich.length > plain.length + 50_000, 'imagem embutida aumenta o arquivo');
+
+  const t = setup({ script: [say('ok')], env: { KNOWLEDGE_DIR: 'knowledge' } });
+  await t.brain.owner('oi');
+  const desc = t.client.requests[0].tools.find((x) => x.name === 'create_document').input_schema.properties.content.description;
+  assert.match(desc, /imagem:ID/);
+  assert.match(desc, /painel \(Tela do Painel/);
+  assert.match(desc, /```grafico/);
+});
