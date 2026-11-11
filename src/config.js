@@ -18,6 +18,10 @@ export function loadConfig(env = process.env) {
     token: env.JARVIS_TOKEN || '',
 
     model: env.JARVIS_MODEL || 'claude-opus-5-5',
+    // Modo rápido do modelo nas conversas por voz (responde mais depressa, custa mais por resposta).
+    fastVoice: /^(1|true|sim)$/i.test(env.JARVIS_FAST || ''),
+    // Velocidade de reprodução da voz no app (1 = normal).
+    voiceRate: Math.min(1.6, Math.max(0.7, num(env.VOICE_SPEED, 1.12))),
 
     // Regras iniciais (o dono pode mudar por voz/WhatsApp; o que ele disser fica salvo no banco).
     defaultThreshold: num(env.ESCALATION_THRESHOLD, 2000),

@@ -213,7 +213,7 @@
   async function refresh() {
     try {
       const s = await api('/api/state');
-      assistant = s.assistant || 'Jarvis'; serverVoice = Boolean(s.voice);
+      assistant = s.assistant || 'Jarvis'; serverVoice = Boolean(s.voice); voiceRate = Number(s.voiceRate) || 1;
       $('name').textContent = assistant; document.title = assistant;
       orb.setAttribute('aria-label', 'Falar com o ' + assistant);
       $('s-q').textContent = s.today.questionsAnswered;
@@ -246,7 +246,7 @@
   // Voz natural vinda do servidor. Um único elemento de áudio, liberado no primeiro toque,
   // porque o iPhone só deixa tocar som que começou num gesto do usuário.
   const player = new Audio();
-  let serverVoice = false, playerUnlocked = false;
+  let serverVoice = false, playerUnlocked = false, voiceRate = 1;
   const SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
   function unlockPlayer() {
     if (playerUnlocked) return; playerUnlocked = true;
@@ -274,7 +274,7 @@
       const url = URL.createObjectURL(await res.blob());
       await new Promise((resolve, reject) => {
         player.onended = resolve; player.onpause = resolve; player.onerror = reject;
-        player.src = url; player.play().catch(reject);
+        player.src = url; player.defaultPlaybackRate = voiceRate; player.playbackRate = voiceRate; player.play().catch(reject);
       }).finally(() => URL.revokeObjectURL(url));
     } catch {
       return speakBrowser(text); // sem voz do servidor, usa a do aparelho

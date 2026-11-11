@@ -241,7 +241,7 @@ export function createBrain({ store, config, notifyOwner, sendToContact, client,
   }
 
   /** Um turno completo: monta o histórico, roda o loop de ferramentas e devolve o texto final. */
-  async function run({ system, tools, handlers, conversationId, text, channel, effort }) {
+  async function run({ system, tools, handlers, conversationId, text, channel, effort, context = '', fast = false }) {
     const history = store.history(conversationId, HISTORY_TURNS);
     const messages = [];
     for (const t of history) {
@@ -253,7 +253,7 @@ export function createBrain({ store, config, notifyOwner, sendToContact, client,
     if (messages[0]?.role === 'assistant') messages.shift();
 
     const stamp = `[${localTime(store.now(), config.timezone).label}. ${CHANNEL_STYLE[channel] ?? CHANNEL_STYLE.text}]`;
-    const userContent = `${stamp}\n\n${text}`;
+    const userContent = `${stamp}${context ? `\n${context}` : ''}\n\n${text}`;
     const last = messages[messages.length - 1];
     if (last?.role === 'user') last.content += `\n\n${userContent}`;
     else messages.push({ role: 'user', content: userContent });
@@ -269,6 +269,7 @@ export function createBrain({ store, config, notifyOwner, sendToContact, client,
         fallbacks: 'default',
         thinking: { type: 'adaptive' },
         output_config: { effort },
+        ...(fast ? { speed: 'fast' } : {}),
         cache_control: { type: 'ephemeral' },
         system,
         tools,
@@ -336,6 +337,9 @@ export function createBrain({ store, config, notifyOwner, sendToContact, client,
           text,
           channel,
           effort: channel === 'voice' ? 'low' : 'medium',
+          fast: channel === 'voice' && config.fastVoice,
+          // Os números do dia já vão no contexto: a pergunta mais comum dispensa uma ida e volta de ferramenta.
+          context: `[Números das últimas 24 horas, já consultados agora: ${JSON.stringify(snapshot(store, config, days(1)))}. Para outros períodos ou detalhes, use as ferramentas.]`,
         });
       } catch (e) {
         fail(e);

@@ -243,3 +243,19 @@ test('provedor de voz: ElevenLabs tem prioridade e recebe o pedido certo', async
   assert.equal(JSON.parse(calls[1].init.body).response_format, 'opus');
   assert.equal(createSpeech({}).canSpeak, false);
 });
+
+test('voz mais ágil: números do dia vão no contexto e o modo rápido é opcional', async () => {
+  const a = setup({ script: [say('Tudo em ordem.')] });
+  a.store.addEvent({ type: 'new_member' });
+  await a.brain.owner('como está o negócio?', { channel: 'voice' });
+  const req = a.client.requests[0];
+  assert.match(req.messages.at(-1).content, /"newMembers":1/);
+  assert.equal(req.speed, undefined);
+
+  const b = setup({ script: [say('Ok.'), say('Ok.')], env: { JARVIS_FAST: '1', VOICE_SPEED: '9' } });
+  await b.brain.owner('oi', { channel: 'voice' });
+  await b.brain.owner('oi', { channel: 'text' });
+  assert.equal(b.client.requests[0].speed, 'fast');
+  assert.equal(b.client.requests[1].speed, undefined, 'texto não usa o modo rápido');
+  assert.equal(b.config.voiceRate, 1.6, 'velocidade fica dentro do limite');
+});

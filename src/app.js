@@ -180,6 +180,7 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, log 
       today: snapshot(store, config, store.now() - DAY),
       whatsappLive: whatsapp.live,
       voice: Boolean(speech?.canSpeak),
+      voiceRate: config.voiceRate,
     });
   });
 
