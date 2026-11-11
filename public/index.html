@@ -59,10 +59,12 @@
   .msg.me { align-self: flex-end; color: var(--muted); text-align: right; }
   .msg.jarvis { align-self: flex-start; padding-left: 12px; border-left: 1px solid var(--green); }
 
-  .doc { align-self: flex-start; display: inline-flex; align-items: center; gap: 10px; max-width: 88%; padding: 10px 14px; border: 1px solid var(--faint); border-radius: 10px; color: var(--text); text-decoration: none; font-size: 14px; }
+  .doc { align-self: flex-start; display: flex; align-items: stretch; max-width: 92%; border: 1px solid var(--faint); border-radius: 10px; font-size: 14px; overflow: hidden; }
+  .doc a { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding: 11px 14px; color: var(--text); text-decoration: none; }
   .doc svg { width: 16px; height: 16px; flex: none; color: var(--green); }
   .doc span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc small { color: var(--muted); flex: none; }
+  .doc .share { flex: none; width: 46px; display: grid; place-items: center; border-left: 1px solid var(--faint); }
   #doclist { display: flex; flex-direction: column; gap: 8px; max-height: 50dvh; overflow-y: auto; }
   #doclist .doc { max-width: 100%; align-self: stretch; }
   .close { margin-top: 16px; color: var(--muted); font-size: 13px; }
@@ -156,15 +158,36 @@
   };
 
   const DOC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>';
+  const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 7l4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  const canShareFiles = (() => {
+    try { return !!navigator.canShare && navigator.canShare({ files: [new File([''], 'a.pdf', { type: 'application/pdf' })] }); } catch { return false; }
+  })();
   function docLink(d, withDate) {
+    const box = document.createElement('div');
+    box.className = 'doc';
     const a = document.createElement('a');
-    a.className = 'doc'; a.href = d.url; a.target = '_blank'; a.rel = 'noopener';
+    a.href = d.url; a.target = '_blank'; a.rel = 'noopener';
     a.innerHTML = DOC_ICON;
     const s = document.createElement('span'); s.textContent = d.title; a.appendChild(s);
     const m = document.createElement('small');
     m.textContent = withDate && d.ts ? new Date(d.ts).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : 'PDF';
     a.appendChild(m);
-    return a;
+    box.appendChild(a);
+    if (canShareFiles) {
+      // O arquivo é baixado já na criação do item: o iPhone só abre a folha de compartilhar
+      // se ela for chamada no instante do toque, sem espera no meio.
+      const name = d.title.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) + '.pdf';
+      const file = fetch(d.url).then((r) => (r.ok ? r.blob() : Promise.reject())).then((blob) => new File([blob], name, { type: 'application/pdf' }));
+      let ready = null; file.then((f) => (ready = f), () => {});
+      const btn = document.createElement('button');
+      btn.className = 'share'; btn.setAttribute('aria-label', 'Salvar ou enviar ' + d.title); btn.innerHTML = SHARE_ICON;
+      btn.addEventListener('click', () => {
+        if (!ready) return window.open(d.url, '_blank');
+        navigator.share({ files: [ready], title: d.title }).catch(() => {});
+      });
+      box.appendChild(btn);
+    }
+    return box;
   }
 
   // ---------- Núcleo visual: anéis de luz que reagem ao estado ----------
