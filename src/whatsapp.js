@@ -65,7 +65,7 @@ export function createWhatsApp(cfg, { fetchImpl = fetch, log = console.log } = {
       const form = new FormData();
       form.append('messaging_product', 'whatsapp');
       form.append('type', mime);
-      form.append('file', new Blob([buffer], { type: mime }), 'resposta.ogg');
+      form.append('file', new Blob([buffer], { type: mime }), mime === 'audio/mpeg' ? 'resposta.mp3' : 'resposta.ogg');
       const up = await fetchImpl(`${base}/${cfg.phoneNumberId}/media`, { method: 'POST', headers: auth, body: form });
       if (!up.ok) throw new Error(`WhatsApp upload ${up.status}: ${(await up.text()).slice(0, 300)}`);
       const { id } = await up.json();

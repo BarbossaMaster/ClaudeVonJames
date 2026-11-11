@@ -57,7 +57,7 @@ export function setup({ script = [], env = {}, speech } = {}) {
   });
   const jarvis = createJarvis({ store, config, whatsapp, speech: sp, brain, log: quiet });
   links.jarvis = jarvis;
-  const app = createApp({ store, config, whatsapp, brain, jarvis, log: quiet });
+  const app = createApp({ store, config, whatsapp, speech: sp, brain, jarvis, log: quiet });
   return { config, store, sent, whatsapp, client, brain, jarvis, app, advance: (ms) => (clock += ms) };
 }
 

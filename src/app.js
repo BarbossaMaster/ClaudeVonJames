@@ -96,9 +96,10 @@ export function createJarvis({ store, config, whatsapp, speech, brain, log = con
       }
 
       // Áudio recebido, áudio devolvido (com texto de reserva se a síntese falhar).
-      if (spoken && speech.enabled) {
+      if (spoken && speech.canSpeak) {
         try {
-          return await whatsapp.sendAudio(msg.from, await speech.speak(reply));
+          const audio = await speech.speak(reply, { format: 'voice' });
+          return await whatsapp.sendAudio(msg.from, audio.buffer, audio.mime);
         } catch (e) {
           log('[jarvis] falha ao gerar áudio:', e.message);
         }
@@ -110,7 +111,7 @@ export function createJarvis({ store, config, whatsapp, speech, brain, log = con
   return { notifyOwner, ingestEvent, handleWhatsApp };
 }
 
-export function createApp({ store, config, whatsapp, brain, jarvis, log = console.error }) {
+export function createApp({ store, config, whatsapp, speech, brain, jarvis, log = console.error }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -159,12 +160,26 @@ export function createApp({ store, config, whatsapp, brain, jarvis, log = consol
     }),
   );
 
+  // Voz natural para o app: devolve MP3 da resposta.
+  app.post(
+    '/api/speak',
+    auth,
+    wrap(async (req, res) => {
+      const text = String(req.body?.text ?? '').trim();
+      if (!text) return res.status(400).json({ error: 'text é obrigatório' });
+      if (!speech?.canSpeak) return res.status(503).json({ error: 'voz não configurada' });
+      const audio = await speech.speak(text.slice(0, 2000), { format: 'mp3' });
+      res.set({ 'Content-Type': audio.mime, 'Cache-Control': 'no-store' }).send(audio.buffer);
+    }),
+  );
+
   app.get('/api/state', auth, (_req, res) => {
     res.json({
       assistant: config.assistantName,
       rules: getRules(store, config),
       today: snapshot(store, config, store.now() - DAY),
       whatsappLive: whatsapp.live,
+      voice: Boolean(speech?.canSpeak),
     });
   });
 

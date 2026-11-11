@@ -213,7 +213,7 @@
   async function refresh() {
     try {
       const s = await api('/api/state');
-      assistant = s.assistant || 'Jarvis';
+      assistant = s.assistant || 'Jarvis'; serverVoice = Boolean(s.voice);
       $('name').textContent = assistant; document.title = assistant;
       orb.setAttribute('aria-label', 'Falar com o ' + assistant);
       $('s-q').textContent = s.today.questionsAnswered;
@@ -239,7 +239,17 @@
     if (unlocked || !synth) return; unlocked = true;
     const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u);
   };
-  function speak(text) {
+  const unlockAll = () => { unlock(); unlockPlayer(); };
+  // Voz natural vinda do servidor. Um único elemento de áudio, liberado no primeiro toque,
+  // porque o iPhone só deixa tocar som que começou num gesto do usuário.
+  const player = new Audio();
+  let serverVoice = false, playerUnlocked = false;
+  const SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+  function unlockPlayer() {
+    if (playerUnlocked) return; playerUnlocked = true;
+    player.src = SILENCE; player.play().catch(() => {});
+  }
+  function speakBrowser(text) {
     return new Promise((resolve) => {
       if (!synth) return resolve();
       synth.cancel();
@@ -249,6 +259,25 @@
       synth.speak(u);
     });
   }
+  async function speak(text) {
+    if (!serverVoice) return speakBrowser(text);
+    try {
+      const res = await fetch('/api/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const url = URL.createObjectURL(await res.blob());
+      await new Promise((resolve, reject) => {
+        player.onended = resolve; player.onpause = resolve; player.onerror = reject;
+        player.src = url; player.play().catch(reject);
+      }).finally(() => URL.revokeObjectURL(url));
+    } catch {
+      return speakBrowser(text); // sem voz do servidor, usa a do aparelho
+    }
+  }
+  const stopSpeaking = () => { synth && synth.cancel(); player.pause(); };
 
   // ---------- Voz: escuta ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -328,13 +357,13 @@
 
   // ---------- Interface ----------
   orb.addEventListener('click', () => {
-    unlock();
-    if (state === 'speaking') { synth && synth.cancel(); return; }
+    unlockAll();
+    if (state === 'speaking') { stopSpeaking(); return; }
     if (!SR) return setState('idle', 'Sem voz neste navegador');
     listening ? stopListening() : startListening();
   });
   $('handsfree').addEventListener('click', () => {
-    unlock();
+    unlockAll();
     if (!SR) return setState('idle', 'Sem voz neste navegador');
     handsFree = !handsFree;
     $('handsfree').setAttribute('aria-pressed', String(handsFree));

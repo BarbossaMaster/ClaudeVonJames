@@ -127,10 +127,15 @@ test('falha do Claude: cliente recebe retorno e o dono fica com a pendência', a
 });
 
 test('áudio no WhatsApp: transcreve, responde em áudio; sem voz configurada pede texto', async () => {
-  const speech = { enabled: true, transcribe: async () => 'como está o negócio?', speak: async (t) => Buffer.from('audio:' + t) };
+  const speech = {
+    enabled: true,
+    canSpeak: true,
+    transcribe: async () => 'como está o negócio?',
+    speak: async (t, o) => ({ buffer: Buffer.from(`${o.format}:${t}`), mime: 'audio/ogg' }),
+  };
   const a = setup({ script: [say('Tudo em ordem, senhor.')], speech });
   await a.jarvis.handleWhatsApp({ id: 'a1', from: OWNER, type: 'audio', audioId: 'media1' });
-  assert.equal(a.sent[0].audio.toString(), 'audio:Tudo em ordem, senhor.');
+  assert.equal(a.sent[0].audio.toString(), 'voice:Tudo em ordem, senhor.');
   assert.equal(a.client.requests[0].tools.length, 5, 'áudio do dono usa as ferramentas do dono');
 
   const b = setup();
@@ -201,4 +206,40 @@ test('janela de 24h fechada: resumo vai por template quando configurado', async 
   await jarvis.notifyOwner('Resumo 2');
   assert.equal(sent.at(-1).template, undefined);
   assert.equal(config.whatsapp.templateLang, 'pt_BR');
+});
+
+test('voz do app: /api/speak devolve MP3 quando há serviço de voz; 503 sem', async () => {
+  const speech = { enabled: false, canSpeak: true, speak: async (t, o) => ({ buffer: Buffer.from(`${o.format}:${t}`), mime: 'audio/mpeg' }) };
+  const a = await serve(setup({ speech }).app);
+  const b = await serve(setup().app);
+  try {
+    const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+    const body = JSON.stringify({ text: 'Olá' });
+    const ok = await fetch(`${a.base}/api/speak`, { method: 'POST', headers: h, body });
+    assert.equal(ok.headers.get('content-type'), 'audio/mpeg');
+    assert.equal(await ok.text(), 'mp3:Olá');
+    assert.equal((await (await fetch(`${a.base}/api/state`, { headers: h })).json()).voice, true);
+    assert.equal((await fetch(`${a.base}/api/speak`, { method: 'POST', body })).status, 401);
+    assert.equal((await fetch(`${b.base}/api/speak`, { method: 'POST', headers: h, body })).status, 503);
+  } finally {
+    await a.close(); await b.close();
+  }
+});
+
+test('provedor de voz: ElevenLabs tem prioridade e recebe o pedido certo', async () => {
+  const { createSpeech } = await import('../src/speech.js');
+  const calls = [];
+  const fetchImpl = async (url, init) => (calls.push({ url, init }), { ok: true, arrayBuffer: async () => new ArrayBuffer(3) });
+  const s = createSpeech({ openaiKey: 'o', elevenKey: 'e', elevenVoice: 'voz1', elevenModel: 'eleven_multilingual_v2', ttsModel: 'tts-1', ttsVoice: 'onyx' }, { fetchImpl });
+  assert.equal(s.provider, 'elevenlabs');
+  const out = await s.speak('Olá');
+  assert.equal(out.mime, 'audio/mpeg');
+  assert.equal(calls[0].url, 'https://api.elevenlabs.io/v1/text-to-speech/voz1?output_format=mp3_44100_128');
+  assert.equal(calls[0].init.headers['xi-api-key'], 'e');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { text: 'Olá', model_id: 'eleven_multilingual_v2' });
+
+  const o = createSpeech({ openaiKey: 'o', ttsModel: 'tts-1', ttsVoice: 'onyx' }, { fetchImpl });
+  assert.equal((await o.speak('Oi', { format: 'voice' })).mime, 'audio/ogg');
+  assert.equal(JSON.parse(calls[1].init.body).response_format, 'opus');
+  assert.equal(createSpeech({}).canSpeak, false);
 });

@@ -38,12 +38,15 @@ export function loadConfig(env = process.env) {
       graphVersion: env.WHATSAPP_GRAPH_VERSION || 'v21.0',
     },
 
-    // Opcional: ouvir e responder áudios no WhatsApp.
+    // Opcional: voz natural no app e áudios no WhatsApp.
     speech: {
       openaiKey: env.OPENAI_API_KEY || '',
       sttModel: env.STT_MODEL || 'whisper-1',
       ttsModel: env.TTS_MODEL || 'tts-1',
       ttsVoice: env.TTS_VOICE || 'onyx',
+      elevenKey: env.ELEVENLABS_API_KEY || '',
+      elevenVoice: env.ELEVENLABS_VOICE_ID || '',
+      elevenModel: env.ELEVENLABS_MODEL || 'eleven_multilingual_v2',
     },
   };
 }
