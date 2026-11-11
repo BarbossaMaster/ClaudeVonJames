@@ -67,6 +67,8 @@
   #doclist .doc { max-width: 100%; align-self: stretch; }
   .close { margin-top: 16px; color: var(--muted); font-size: 13px; }
 
+  #dbg { font: 10px/1.35 ui-monospace, Menlo, monospace; color: var(--muted); margin: 0 0 8px; white-space: pre-wrap; }
+
   form.bar { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 620px; margin: 6px auto 16px; border-bottom: 1px solid var(--faint); transition: border-color .2s; }
   form.bar:focus-within { border-color: var(--green); }
   input[type=text], input[type=password] {
@@ -107,6 +109,7 @@
   <div id="status">Toque para falar</div>
 </main>
 
+<pre id="dbg" hidden></pre>
 <div id="log" aria-live="polite"></div>
 <form id="textform" class="bar" autocomplete="off">
   <input type="text" id="text" placeholder="Escreva aqui" enterkeyhint="send" aria-label="Mensagem">
@@ -138,6 +141,14 @@
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
   };
+  // Diagnóstico: abrir o endereço com #debug no final mostra os eventos de voz na tela.
+  const debugOn = location.hash.includes('debug');
+  const t0 = Date.now();
+  function dbg(msg) {
+    if (!debugOn) return;
+    const el = $('dbg'); el.hidden = false;
+    el.textContent = (el.textContent + `\n${((Date.now() - t0) / 1000).toFixed(1)} ${msg}`).split('\n').slice(-14).join('\n');
+  }
   let token = mem.get('jarvis_token') || '';
   let assistant = 'Jarvis';
   let state = 'idle';
@@ -307,14 +318,17 @@
   function speak(text) {
     return new Promise((resolve) => {
       let done = false, timer = null;
-      const finish = () => {
+      const finish = (why = 'evento') => {
         if (done) return; done = true;
         clearTimeout(timer); endSpeech = null;
         player.onended = player.onerror = player.onloadedmetadata = null;
+        // Devolve o áudio do aparelho: no iPhone, um player ainda "ativo" deixa o microfone surdo na escuta seguinte.
+        try { player.pause(); player.removeAttribute('src'); player.load(); } catch {}
+        dbg('fala: fim (' + why + ')');
         resolve();
       };
-      const guard = (ms) => { clearTimeout(timer); timer = setTimeout(finish, ms); };
-      endSpeech = finish;
+      const guard = (ms) => { clearTimeout(timer); timer = setTimeout(() => finish('tempo'), ms); };
+      endSpeech = () => finish('interrompida');
       guard(15000 + text.length * 90);
 
       const browser = () => {
@@ -323,7 +337,8 @@
         synth.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'pt-BR'; if (voice) u.voice = voice; u.rate = 1.05; u.pitch = .9;
-        u.onend = u.onerror = finish;
+        u.onend = u.onerror = () => finish('voz do aparelho');
+        dbg('fala: voz do aparelho');
         synth.speak(u);
         guard(4000 + text.length * 95);
       };
@@ -339,15 +354,16 @@
           if (done) return;
           if (lastUrl) URL.revokeObjectURL(lastUrl);
           lastUrl = URL.createObjectURL(blob);
-          player.onended = finish;
-          player.onerror = browser;
+          player.onended = () => finish('áudio terminou');
+          player.onerror = () => { dbg('fala: erro no player'); browser(); };
+          dbg('fala: tocando áudio');
           player.onloadedmetadata = () => {
             if (Number.isFinite(player.duration)) guard((player.duration / voiceRate) * 1000 + 2500);
           };
           player.src = lastUrl; player.defaultPlaybackRate = voiceRate; player.playbackRate = voiceRate;
           return player.play();
         })
-        .catch(browser); // sem voz do servidor, usa a do aparelho
+        .catch((e) => { dbg('fala: falhou ' + (e && e.name || e)); browser(); }); // sem voz do servidor, usa a do aparelho
     });
   }
   function stopSpeaking() {
@@ -368,11 +384,13 @@
     const r = (rec = new SR());
     r.lang = 'pt-BR'; r.interimResults = true; r.continuous = false;
     listening = true; setState('listening');
+    let results = 0;
     let heard = '', done = false, failed = '', silenceTimer = null, endTimer = null;
     const finish = () => {
       if (done) return; done = true;
       clearTimeout(silenceTimer); clearTimeout(endTimer);
       r.onresult = r.onerror = r.onend = null;
+      dbg(`escuta: fim, ${results} resultados, "${heard.slice(0, 24)}"${failed ? ', erro ' + failed : ''}`);
       if (rec !== r) return; // já existe outra sessão no lugar desta
       listening = false;
       const said = heard.trim();
@@ -396,17 +414,22 @@
     r.onresult = (e) => {
       let text = '';
       for (const res of e.results) text += res[0].transcript;
-      heard = text;
+      results++;
+      // O iPhone às vezes manda um último resultado vazio; não deixa ele apagar o que já foi ouvido.
+      if (text.trim()) heard = text;
       stopSoon(SILENCE_MS);
     };
     r.onerror = (e) => {
-      failed = e.error || 'erro';
+      failed = e.error || 'erro'; dbg('escuta: erro ' + failed);
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         handsFree = false; $('handsfree').setAttribute('aria-pressed', 'false');
         heard = ''; finish(); setState('idle', 'Permita o microfone');
       }
     };
     r.onend = finish;
+    r.onaudiostart = () => dbg('escuta: microfone abriu');
+    r.onspeechstart = () => dbg('escuta: detectou voz');
+    dbg('escuta: iniciando');
     try { r.start(); stopSoon(NO_SPEECH_MS); } catch { failed = 'aborted'; finish(); }
   }
   function stopListening() { if (rec && rec.stopNow) rec.stopNow(); }
