@@ -56,6 +56,9 @@
   #log::-webkit-scrollbar { display: none; }
   .msg { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
   .msg.jarvis { align-self: flex-start; padding-left: 12px; border-left: 1px solid var(--green); }
+  .msg.me { align-self: flex-end; color: var(--muted); text-align: right; max-width: 85%; }
+  .stage { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .talk { display: flex; flex-direction: column; }
 
   .doc { align-self: flex-start; display: flex; align-items: stretch; max-width: 92%; border: 1px solid var(--faint); border-radius: 10px; font-size: 14px; overflow: hidden; }
   .doc a { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding: 11px 14px; color: var(--text); text-decoration: none; }
@@ -85,6 +88,37 @@
   dialog p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
   dialog form.bar { margin: 0; }
   .err { color: var(--danger); font-size: 13px; min-height: 1.3em; margin-top: 10px; }
+
+  /* Mouse: retorno visual ao passar por cima. */
+  @media (hover: hover) {
+    .actions button:hover, .close:hover { color: var(--text); }
+    .doc:hover { border-color: var(--muted); }
+    .send:hover { filter: drop-shadow(0 0 6px var(--green)); }
+    .core:hover canvas { filter: brightness(1.15); }
+  }
+
+  /* Computador: o anel fica à esquerda e a conversa, com histórico, numa coluna à direita. */
+  @media (min-width: 900px) {
+    body { height: 100dvh; overflow: hidden; padding-left: max(32px, calc((100vw - 1280px) / 2)); padding-right: max(32px, calc((100vw - 1280px) / 2)); }
+    header { padding: 24px 0 18px; }
+    .brand h1 { font-size: 14px; }
+    .actions { gap: 26px; font-size: 14px; }
+    .stat { padding: 18px 0 16px; }
+    .stat b { font-size: 30px; }
+    .stat span { font-size: 11px; margin-top: 4px; }
+    .stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 460px); }
+    main { min-height: 0; gap: 14px; }
+    .core { width: min(46vh, 34vw, 440px); }
+    #status { font-size: 13px; }
+    .talk { min-height: 0; border-left: 1px solid var(--line); padding: 24px 0 0 36px; }
+    #log { flex: 1; max-width: none; max-height: none; margin: 0; padding: 0 12px 16px 0; gap: 18px; scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+    #log::-webkit-scrollbar { display: block; width: 6px; }
+    #log::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 3px; }
+    #log:empty::before { content: "Aperte espaço para falar ou escreva abaixo. Esc interrompe a fala."; color: var(--muted); font-size: 14px; margin: auto 0; }
+    #log > :first-child { margin-top: auto; }
+    form.bar { max-width: none; margin: 0 0 28px; }
+    dialog { width: min(90vw, 440px); }
+  }
 </style>
 </head>
 <body>
@@ -104,17 +138,21 @@
   <div class="stat" id="s-p-box"><b id="s-p">–</b><span>Pendentes</span></div>
 </section>
 
+<div class="stage">
 <main>
   <button class="core" id="orb" data-state="idle" aria-label="Falar com o Jarvis"><canvas id="viz"></canvas></button>
   <div id="status">Toque para falar</div>
 </main>
 
+<section class="talk" aria-label="Conversa">
 <pre id="dbg" hidden></pre>
 <div id="log" aria-live="polite"></div>
 <form id="textform" class="bar" autocomplete="off">
   <input type="text" id="text" placeholder="Escreva aqui" enterkeyhint="send" aria-label="Mensagem">
   <button class="send" type="submit" aria-label="Enviar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
 </form>
+</section>
+</div>
 
 <dialog id="docs">
   <h2>Documentos</h2>
@@ -154,16 +192,34 @@
   let state = 'idle';
   let handsFree = false;
   let lastReplyAt = 0;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
   const setState = (s, label) => {
     state = s; orb.dataset.state = s;
-    statusEl.textContent = label ?? ({ idle: handsFree ? `Diga "${assistant}"` : 'Toque para falar', listening: 'Ouvindo', thinking: 'Pensando', speaking: 'Falando' })[s];
+    statusEl.textContent = label ?? ({ idle: handsFree ? `Diga "${assistant}"` : !SR ? 'Escreva sua mensagem' : desk.matches ? 'Clique ou aperte espaço' : 'Toque para falar', listening: 'Ouvindo', thinking: 'Pensando', speaking: 'Falando' })[s];
   };
-  // A tela mostra só a última resposta do assistente (e os PDFs dela). O que o usuário fala não aparece.
-  function showReply(text, documents = []) {
+  // No celular a tela mostra só a última resposta do assistente (e os PDFs dela).
+  // No computador há espaço: a conversa inteira fica na coluna da direita, com as falas do usuário.
+  const wide = matchMedia('(min-width: 900px)');
+  const desk = matchMedia('(hover: hover) and (pointer: fine)');
+  const bubble = (cls, text) => {
     const d = document.createElement('div');
-    d.className = 'msg jarvis'; d.textContent = text;
-    logEl.replaceChildren(d, ...documents.map((x) => docLink(x)));
+    d.className = 'msg ' + cls; d.textContent = text;
+    return d;
+  };
+  function showAsked(text) {
+    if (!wide.matches) return;
+    logEl.append(bubble('me', text));
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function showReply(text, documents = []) {
+    const d = bubble('jarvis', text), docs = documents.map((x) => docLink(x));
+    if (wide.matches) {
+      logEl.append(d, ...docs);
+      while (logEl.childElementCount > 200) logEl.firstElementChild.remove();
+      return d.scrollIntoView({ block: 'nearest' });
+    }
+    logEl.replaceChildren(d, ...docs);
     logEl.scrollTop = 0;
   }
   const DOC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>';
@@ -373,7 +429,6 @@
   }
 
   // ---------- Voz: escuta ----------
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null, listening = false, retries = 0;
   const SILENCE_MS = 3000;      // pausa que encerra uma fala curta
   const LONG_SILENCE_MS = 4000; // em fala longa, espera mais (dá tempo de pensar)
@@ -458,6 +513,7 @@
   }
 
   async function send(text, channel) {
+    showAsked(text);
     setState('thinking');
     try {
       const { reply, documents = [] } = await api('/api/chat', { text, channel });
@@ -474,9 +530,10 @@
   }
 
   // ---------- Interface ----------
+  const NO_VOICE = 'Sem escuta neste navegador. Use Chrome, Edge ou Safari';
   orb.addEventListener('click', () => {
     unlockAll();
-    if (!SR) return setState('idle', 'Sem voz neste navegador');
+    if (!SR) { $('text').focus(); return setState('idle', NO_VOICE); }
     if (state === 'thinking') return;
     // Tocar enquanto ele fala interrompe e já começa a ouvir.
     if (state === 'speaking') { stopSpeaking(); setState('idle'); retries = 0; return startListening(); }
@@ -485,7 +542,7 @@
   });
   $('handsfree').addEventListener('click', () => {
     unlockAll();
-    if (!SR) return setState('idle', 'Sem voz neste navegador');
+    if (!SR) return setState('idle', NO_VOICE);
     handsFree = !handsFree;
     $('handsfree').setAttribute('aria-pressed', String(handsFree));
     if (handsFree) startListening(); else { stopListening(); setState('idle'); }
@@ -495,6 +552,27 @@
     const t = $('text').value.trim(); if (!t || state === 'thinking') return;
     $('text').value = ''; send(t, 'text');
   });
+  // Teclado: espaço fala/para (como tocar no anel), Esc interrompe a fala,
+  // e começar a digitar em qualquer lugar leva o texto para o campo de mensagem.
+  addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
+    const el = document.activeElement;
+    const typing = el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+    if (e.key === 'Escape') {
+      if (state === 'speaking') { stopSpeaking(); setState('idle'); }
+      else if (listening) stopListening();
+      else if (typing) el.blur();
+      return;
+    }
+    // Com um botão ou link em foco, espaço e Enter já têm a função deles.
+    if (typing || (el && /^(BUTTON|A)$/.test(el.tagName))) return;
+    if (e.code === 'Space') {
+      e.preventDefault(); // não rola a página
+      if (!e.repeat) orb.click();
+    } else if (e.key.length === 1) $('text').focus();
+  });
+  wide.addEventListener('change', () => { if (state === 'idle') setState('idle'); });
+  desk.addEventListener('change', () => { if (state === 'idle') setState('idle'); });
   $('docsbtn').addEventListener('click', async () => {
     $('docs').showModal();
     try {
@@ -521,6 +599,7 @@
   });
   $('login').addEventListener('cancel', (e) => e.preventDefault());
 
+  setState('idle');
   if (token) refresh(); else askToken('');
   setInterval(() => token && document.visibilityState === 'visible' && refresh(), 60000);
 })();
