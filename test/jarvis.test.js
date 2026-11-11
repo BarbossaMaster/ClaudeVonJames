@@ -1,0 +1,204 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
+import { setup, serve, say, use } from './helpers.js';
+import { normalizePhone, samePhone } from '../src/util.js';
+import { getRules } from '../src/store.js';
+import { snapshot, briefingText, runBriefing } from '../src/briefing.js';
+import { createWhatsApp, parseWebhook } from '../src/whatsapp.js';
+
+const OWNER = '551188887777'; // como o WhatsApp entrega: sem o nono dígito
+const CLIENT = '5521999990000';
+const H = 3600 * 1000;
+
+test('telefone brasileiro com e sem o nono dígito é o mesmo contato', () => {
+  assert.equal(normalizePhone('+55 (11) 98888-7777'), '551188887777');
+  assert.ok(samePhone('+55 11 98888-7777', OWNER));
+  assert.ok(!samePhone('', ''));
+  assert.ok(!samePhone(CLIENT, OWNER));
+});
+
+test('resumo diário: números do banco e "nada precisa do senhor"', () => {
+  const { store, config } = setup();
+  for (let i = 0; i < 31; i++) store.addEvent({ type: 'customer_message', status: 'handled' });
+  for (let i = 0; i < 14; i++) store.addEvent({ type: 'new_member' });
+  const text = briefingText(snapshot(store, config, 0), config);
+  assert.equal(text, '31 perguntas respondidas.\n14 novos membros.\nNada precisa do senhor.');
+});
+
+test('resumo diário lista pendências e só sai uma vez por dia, depois da hora marcada', async () => {
+  const { store, config, jarvis, sent, advance } = setup();
+  store.addEvent({ type: 'sale', amount: 300 });
+  store.addEvent({ type: 'escalation', status: 'pending', summary: 'Cliente pede parcelamento', amount: 900, contactName: 'Ana' });
+  const deps = { store, config, notifyOwner: jarvis.notifyOwner };
+
+  assert.equal(await runBriefing(deps), null, 'antes das 18h não envia');
+  advance(7 * H); // 19h em São Paulo
+  const text = await runBriefing(deps);
+  assert.match(text, /1 venda \(R\$\s300,00\)/);
+  assert.match(text, /1 item aguarda sua decisão:\n#2 Cliente pede parcelamento \(R\$\s900,00\) — Ana/);
+  assert.equal(sent.length, 1);
+  assert.equal(await runBriefing(deps), null, 'não repete no mesmo dia');
+  advance(24 * H);
+  assert.ok(await runBriefing(deps), 'envia de novo no dia seguinte');
+});
+
+test('evento acima do limite avisa o dono na hora; abaixo, só registra', async () => {
+  const { jarvis, sent, store } = setup();
+  const small = await jarvis.ingestEvent({ type: 'refund', amount: 150, summary: 'Reembolso curso' });
+  assert.equal(small.alerted, false);
+  assert.equal(sent.length, 0);
+
+  const big = await jarvis.ingestEvent({ type: 'refund', amount: 2500, summary: 'Reembolso mentoria', contact_name: 'Bia' });
+  assert.equal(big.alerted, true);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /🚨 Pedido de reembolso de R\$\s2\.500,00/);
+  assert.equal(store.getEvent(big.id).status, 'pending');
+
+  const sale = await jarvis.ingestEvent({ type: 'sale', amount: 5000 });
+  assert.equal(store.getEvent(sale.id).status, 'handled', 'venda grande avisa mas não vira pendência');
+  assert.match(sent[1].text, /💰 Venda grande/);
+});
+
+test('dono dita a regra por voz e ela passa a valer', async () => {
+  const { brain, store, config, client, jarvis, sent } = setup({
+    script: [
+      use('update_rules', { threshold: 5000, add_instructions: ['Nunca dar desconto acima de 20%.'] }),
+      say('Entendido, senhor. Só o chamo acima de cinco mil reais.'),
+    ],
+  });
+  const reply = await brain.owner('Só me chame se passar de 5 mil. E nada de desconto acima de 20%.', { channel: 'voice' });
+  assert.match(reply, /Entendido, senhor/);
+  assert.deepEqual(getRules(store, config), { threshold: 5000, currency: 'BRL', instructions: ['Nunca dar desconto acima de 20%.'] });
+
+  // a requisição ao Claude segue o formato esperado e devolve o resultado da ferramenta
+  const [first, second] = client.requests;
+  assert.equal(first.model, 'claude-opus-5-5');
+  assert.equal(first.output_config.effort, 'low');
+  assert.match(first.messages.at(-1).content, /lida em voz alta/);
+  assert.equal(second.messages.at(-1).content[0].type, 'tool_result');
+
+  await jarvis.ingestEvent({ type: 'refund', amount: 3000 });
+  assert.equal(sent.length, 0, '3 mil já não alerta com o limite em 5 mil');
+});
+
+test('cliente no WhatsApp: resposta conta como pergunta respondida', async () => {
+  const { jarvis, sent, store, config, client } = setup({ script: [say('O acesso chega por e-mail em até 5 minutos.')] });
+  await jarvis.handleWhatsApp({ id: 'm1', from: CLIENT, name: 'Carlos', type: 'text', text: 'Comprei, cadê meu acesso?' });
+  assert.deepEqual(sent, [{ to: CLIENT, text: 'O acesso chega por e-mail em até 5 minutos.' }]);
+  assert.equal(snapshot(store, config, 0).questionsAnswered, 1);
+  assert.deepEqual(client.requests[0].tools.map((t) => t.name), ['escalate_to_owner'], 'cliente não enxerga ferramentas do dono');
+  assert.doesNotMatch(client.requests[0].system, /trate-o por/);
+
+  await jarvis.handleWhatsApp({ id: 'm1', from: CLIENT, type: 'text', text: 'Comprei, cadê meu acesso?' });
+  assert.equal(sent.length, 1, 'webhook repetido é ignorado');
+});
+
+test('cliente pede algo grande: escala, avisa o dono, e o dono resolve respondendo ao cliente', async () => {
+  const { jarvis, sent, store, config } = setup({
+    script: [
+      use('escalate_to_owner', { summary: 'Carlos quer reembolso da mentoria.', amount: 3000, urgency: 'normal' }),
+      say('Vou confirmar com a equipe e retorno.'),
+      use('resolve_item', { id: 2, decision: 'Aprovado', message_to_contact: 'Carlos, seu reembolso foi aprovado.' }),
+      say('Feito, senhor.'),
+    ],
+  });
+  await jarvis.handleWhatsApp({ id: 'm1', from: CLIENT, name: 'Carlos', type: 'text', text: 'Quero meu dinheiro de volta' });
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].to, '+55 (11) 98888-7777');
+  assert.match(sent[0].text, /🚨 Preciso do senhor\.\n#2 Carlos quer reembolso da mentoria\. \(R\$\s3\.000,00\)/);
+  assert.equal(sent[1].to, CLIENT);
+  const snap = snapshot(store, config, 0);
+  assert.equal(snap.questionsAnswered, 0);
+  assert.equal(snap.pending.length, 1);
+
+  await jarvis.handleWhatsApp({ id: 'm2', from: OWNER, type: 'text', text: 'Aprova o #2' });
+  assert.deepEqual(sent[2], { to: CLIENT, text: 'Carlos, seu reembolso foi aprovado.' });
+  assert.deepEqual(sent[3], { to: OWNER, text: 'Feito, senhor.' });
+  assert.equal(store.getEvent(2).status, 'resolved');
+  assert.equal(snapshot(store, config, 0).pending.length, 0);
+});
+
+test('falha do Claude: cliente recebe retorno e o dono fica com a pendência', async () => {
+  const { jarvis, sent, store } = setup({ script: [] });
+  await jarvis.handleWhatsApp({ id: 'm1', from: CLIENT, type: 'text', text: 'Oi' });
+  assert.match(sent[0].text, /Vou confirmar com a equipe/);
+  assert.equal(store.listEvents({ status: 'pending' }).length, 1);
+});
+
+test('áudio no WhatsApp: transcreve, responde em áudio; sem voz configurada pede texto', async () => {
+  const speech = { enabled: true, transcribe: async () => 'como está o negócio?', speak: async (t) => Buffer.from('audio:' + t) };
+  const a = setup({ script: [say('Tudo em ordem, senhor.')], speech });
+  await a.jarvis.handleWhatsApp({ id: 'a1', from: OWNER, type: 'audio', audioId: 'media1' });
+  assert.equal(a.sent[0].audio.toString(), 'audio:Tudo em ordem, senhor.');
+  assert.equal(a.client.requests[0].tools.length, 5, 'áudio do dono usa as ferramentas do dono');
+
+  const b = setup();
+  await b.jarvis.handleWhatsApp({ id: 'a1', from: CLIENT, type: 'audio', audioId: 'media1' });
+  assert.match(b.sent[0].text, /não consigo ouvir áudios/);
+});
+
+test('HTTP: token protege a API; webhook verifica; chat e eventos funcionam', async () => {
+  const { app, store } = setup({ script: [say('Às ordens.')] });
+  const { base, close } = await serve(app);
+  try {
+    const auth = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+    assert.equal((await fetch(`${base}/api/state`)).status, 401);
+    assert.equal((await fetch(`${base}/api/state`, { headers: { Authorization: 'Bearer errado' } })).status, 401);
+    const state = await (await fetch(`${base}/api/state`, { headers: auth })).json();
+    assert.equal(state.rules.threshold, 2000);
+
+    const chat = await fetch(`${base}/api/chat`, { method: 'POST', headers: auth, body: JSON.stringify({ text: 'Olá', channel: 'voice' }) });
+    assert.deepEqual(await chat.json(), { reply: 'Às ordens.' });
+
+    const bad = await fetch(`${base}/api/events`, { method: 'POST', headers: auth, body: JSON.stringify({ type: 'hack' }) });
+    assert.equal(bad.status, 400);
+    const ev = await fetch(`${base}/api/events`, { method: 'POST', headers: auth, body: JSON.stringify({ type: 'new_member', contact_name: 'Duda' }) });
+    assert.equal(ev.status, 201);
+    assert.equal(store.listEvents({ type: 'new_member' }).length, 1);
+
+    const ok = await fetch(`${base}/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=verifica&hub.challenge=42`);
+    assert.equal(await ok.text(), '42');
+    assert.equal((await fetch(`${base}/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=x&hub.challenge=42`)).status, 403);
+
+    assert.equal((await fetch(`${base}/`)).status, 200, 'app de voz é servido');
+  } finally {
+    await close();
+  }
+});
+
+test('WhatsApp real: assinatura do webhook, parse e envio', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => (calls.push({ url, body: JSON.parse(init.body) }), { ok: true, json: async () => ({}) });
+  const wa = createWhatsApp({ token: 't', phoneNumberId: '123', appSecret: 'shh', graphVersion: 'v21.0' }, { fetchImpl });
+  const raw = Buffer.from('{"a":1}');
+  const sig = 'sha256=' + createHmac('sha256', 'shh').update(raw).digest('hex');
+  assert.ok(wa.verifySignature(raw, sig));
+  assert.ok(!wa.verifySignature(raw, 'sha256=00'));
+  assert.ok(!wa.verifySignature(raw, undefined));
+  assert.ok(!createWhatsApp({ token: 't', phoneNumberId: '1' }).verifySignature(raw, sig), 'live sem app secret recusa');
+
+  await wa.sendText('5511', 'oi');
+  assert.equal(calls[0].url, 'https://graph.facebook.com/v21.0/123/messages');
+  assert.deepEqual(calls[0].body, { messaging_product: 'whatsapp', to: '5511', type: 'text', text: { body: 'oi' } });
+
+  const msgs = parseWebhook({ entry: [{ changes: [{ value: {
+    contacts: [{ wa_id: '5521', profile: { name: 'Carlos' } }],
+    messages: [{ id: 'x', from: '5521', type: 'text', text: { body: 'oi' } }, { id: 'y', from: '5521', type: 'audio', audio: { id: 'm9' } }],
+  } }] }] });
+  assert.deepEqual(msgs[0], { id: 'x', from: '5521', name: 'Carlos', type: 'text', text: 'oi', audioId: null });
+  assert.equal(msgs[1].audioId, 'm9');
+  assert.deepEqual(parseWebhook({ entry: [{ changes: [{ value: { statuses: [{}] } }] }] }), []);
+});
+
+test('janela de 24h fechada: resumo vai por template quando configurado', async () => {
+  const { jarvis, sent, whatsapp, config, advance } = setup({ env: { WHATSAPP_BRIEFING_TEMPLATE: 'resumo_diario' } });
+  whatsapp.live = true;
+  await jarvis.notifyOwner('Resumo');
+  assert.equal(sent[0].template, 'resumo_diario');
+  await jarvis.handleWhatsApp({ id: 'o1', from: OWNER, type: 'image' }); // dono escreveu: janela reabre
+  advance(H);
+  await jarvis.notifyOwner('Resumo 2');
+  assert.equal(sent.at(-1).template, undefined);
+  assert.equal(config.whatsapp.templateLang, 'pt_BR');
+});

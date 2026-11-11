@@ -1,0 +1,56 @@
+import { randomBytes } from 'node:crypto';
+
+const num = (v, d) => (v === undefined || v === '' || Number.isNaN(Number(v)) ? d : Number(v));
+
+/** Lê toda a configuração do ambiente. Nada aqui é obrigatório para subir em modo demonstração. */
+export function loadConfig(env = process.env) {
+  return {
+    port: num(env.PORT, 3000),
+    dbPath: env.JARVIS_DB || 'data/jarvis.db',
+    knowledgeDir: env.KNOWLEDGE_DIR || 'knowledge',
+
+    assistantName: env.ASSISTANT_NAME || 'Jarvis',
+    ownerName: env.OWNER_NAME || 'o dono',
+    ownerTitle: env.OWNER_TITLE || 'senhor',
+    businessName: env.BUSINESS_NAME || 'o negócio',
+
+    // Token que protege o app de voz e a API de eventos.
+    token: env.JARVIS_TOKEN || '',
+
+    model: env.JARVIS_MODEL || 'claude-opus-5-5',
+
+    // Regras iniciais (o dono pode mudar por voz/WhatsApp; o que ele disser fica salvo no banco).
+    defaultThreshold: num(env.ESCALATION_THRESHOLD, 2000),
+    currency: env.CURRENCY || 'BRL',
+
+    timezone: env.TIMEZONE || 'America/Sao_Paulo',
+    briefingHour: num(env.BRIEFING_HOUR, 18),
+
+    whatsapp: {
+      token: env.WHATSAPP_TOKEN || '',
+      phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID || '',
+      verifyToken: env.WHATSAPP_VERIFY_TOKEN || '',
+      appSecret: env.WHATSAPP_APP_SECRET || '',
+      owner: env.OWNER_WHATSAPP || '',
+      // Template aprovado (1 variável no corpo) usado quando a janela de 24h do dono fechou.
+      briefingTemplate: env.WHATSAPP_BRIEFING_TEMPLATE || '',
+      templateLang: env.WHATSAPP_TEMPLATE_LANG || 'pt_BR',
+      graphVersion: env.WHATSAPP_GRAPH_VERSION || 'v21.0',
+    },
+
+    // Opcional: ouvir e responder áudios no WhatsApp.
+    speech: {
+      openaiKey: env.OPENAI_API_KEY || '',
+      sttModel: env.STT_MODEL || 'whisper-1',
+      ttsModel: env.TTS_MODEL || 'tts-1',
+      ttsVoice: env.TTS_VOICE || 'onyx',
+    },
+  };
+}
+
+export function ensureToken(config, log = console.log) {
+  if (config.token) return config.token;
+  config.token = randomBytes(18).toString('base64url');
+  log(`[jarvis] JARVIS_TOKEN não definido. Token temporário desta execução: ${config.token}`);
+  return config.token;
+}

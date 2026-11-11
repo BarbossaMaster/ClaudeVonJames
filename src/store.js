@@ -1,0 +1,161 @@
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  type TEXT NOT NULL,            -- customer_message | new_member | sale | refund | cancellation | payment_failed | escalation | ...
+  source TEXT,                   -- whatsapp | api | voice ...
+  contact TEXT,
+  contact_name TEXT,
+  amount REAL,
+  currency TEXT,
+  summary TEXT,
+  status TEXT NOT NULL DEFAULT 'handled',  -- handled | pending | resolved
+  urgency TEXT,                  -- normal | urgent
+  resolution TEXT,
+  notified INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS events_ts ON events(ts);
+CREATE TABLE IF NOT EXISTS turns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  contact TEXT NOT NULL,
+  role TEXT NOT NULL,
+  text TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS turns_contact ON turns(contact, id);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, ts INTEGER NOT NULL);
+`;
+
+export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
+  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+  const db = new DatabaseSync(path);
+  db.exec(SCHEMA);
+
+  const store = {
+    now,
+
+    addEvent(e) {
+      const r = db
+        .prepare(
+          `INSERT INTO events (ts,type,source,contact,contact_name,amount,currency,summary,status,urgency)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          e.ts ?? now(),
+          e.type,
+          e.source ?? null,
+          e.contact ?? null,
+          e.contactName ?? null,
+          e.amount ?? null,
+          e.currency ?? null,
+          e.summary ?? null,
+          e.status ?? 'handled',
+          e.urgency ?? null,
+        );
+      return Number(r.lastInsertRowid);
+    },
+
+    getEvent(id) {
+      return db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+    },
+
+    updateEvent(id, fields) {
+      const allowed = ['status', 'resolution', 'notified', 'summary', 'urgency'];
+      const keys = Object.keys(fields).filter((k) => allowed.includes(k));
+      if (!keys.length) return;
+      db.prepare(`UPDATE events SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(
+        ...keys.map((k) => fields[k]),
+        id,
+      );
+    },
+
+    listEvents({ type, status, since, limit = 50 } = {}) {
+      const where = [];
+      const args = [];
+      if (type) (where.push('type = ?'), args.push(type));
+      if (status) (where.push('status = ?'), args.push(status));
+      if (since) (where.push('ts >= ?'), args.push(since));
+      const sql = `SELECT * FROM events ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY id DESC LIMIT ?`;
+      return db.prepare(sql).all(...args, Math.min(Number(limit) || 50, 200));
+    },
+
+    /** Contagem e soma por tipo desde `since`. */
+    stats(since = 0) {
+      const rows = db
+        .prepare(
+          `SELECT type, status, COUNT(*) AS n, COALESCE(SUM(amount),0) AS total
+           FROM events WHERE ts >= ? GROUP BY type, status`,
+        )
+        .all(since);
+      const byType = {};
+      for (const r of rows) {
+        const t = (byType[r.type] ??= { count: 0, total: 0, handled: 0, pending: 0, resolved: 0 });
+        t.count += r.n;
+        t.total += r.total;
+        t[r.status] = (t[r.status] ?? 0) + r.n;
+      }
+      return byType;
+    },
+
+    addTurn(contact, role, text) {
+      db.prepare('INSERT INTO turns (ts,contact,role,text) VALUES (?,?,?,?)').run(now(), contact, role, text);
+    },
+
+    history(contact, limit = 20) {
+      return db
+        .prepare('SELECT role, text, ts FROM turns WHERE contact = ? ORDER BY id DESC LIMIT ?')
+        .all(contact, limit)
+        .reverse();
+    },
+
+    lastInboundTs(contact) {
+      const r = db
+        .prepare("SELECT MAX(ts) AS ts FROM turns WHERE contact = ? AND role = 'user'")
+        .get(contact);
+      return r?.ts ?? 0;
+    },
+
+    get(key, fallback = null) {
+      const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+      return r ? JSON.parse(r.value) : fallback;
+    },
+
+    set(key, value) {
+      db.prepare(
+        'INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      ).run(key, JSON.stringify(value));
+    },
+
+    /** true se este id já foi processado (o WhatsApp reenvia webhooks). */
+    alreadySeen(id) {
+      const r = db.prepare('INSERT OR IGNORE INTO seen (id, ts) VALUES (?, ?)').run(id, now());
+      return r.changes === 0;
+    },
+
+    close() {
+      db.close();
+    },
+  };
+  return store;
+}
+
+/** Regras do dono: limite de escalonamento e instruções permanentes. */
+export function getRules(store, config) {
+  const saved = store.get('rules', {});
+  return {
+    threshold: saved.threshold ?? config.defaultThreshold,
+    currency: saved.currency ?? config.currency,
+    instructions: saved.instructions ?? [],
+  };
+}
+
+export function setRules(store, config, patch) {
+  const next = { ...getRules(store, config), ...patch };
+  store.set('rules', next);
+  return next;
+}

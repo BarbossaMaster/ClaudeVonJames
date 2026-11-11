@@ -1,0 +1,20 @@
+{
+  "name": "jarvis",
+  "version": "0.1.0",
+  "description": "Jarvis: assistente de IA que toca o negócio enquanto o dono está fora — WhatsApp, voz, resumo diário e escalonamento por regra.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --watch src/server.js",
+    "demo": "node --disable-warning=ExperimentalWarning scripts/demo.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "express": "^5.3.0"
+  }
+}
