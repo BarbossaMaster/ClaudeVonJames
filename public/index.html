@@ -252,32 +252,55 @@
 
   // ---------- Voz: escuta ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, listening = false, finalText = '';
+  let rec = null, listening = false, heard = '', silenceTimer = null, endTimer = null;
+  const SILENCE_MS = 1600;   // pausa que encerra a fala
+  const NO_SPEECH_MS = 8000; // desiste se ninguém falar
   function startListening() {
     if (!SR || listening || state === 'thinking' || state === 'speaking') return;
-    rec = new SR(); rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = false;
-    finalText = ''; listening = true; setState('listening'); heardEl.textContent = '';
-    rec.onresult = (e) => {
-      let interim = ''; finalText = '';
-      for (const r of e.results) (r.isFinal ? (finalText += r[0].transcript) : (interim += r[0].transcript));
-      heardEl.textContent = finalText || interim;
-    };
-    rec.onerror = (e) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        handsFree = false; $('handsfree').setAttribute('aria-pressed', 'false');
-        setState('idle', 'Permita o microfone');
-      }
-    };
-    rec.onend = () => {
+    const r = (rec = new SR());
+    r.lang = 'pt-BR'; r.interimResults = true; r.continuous = false;
+    heard = ''; listening = true; setState('listening'); heardEl.textContent = '';
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      clearTimeout(silenceTimer); clearTimeout(endTimer);
       listening = false;
-      const said = finalText.trim();
+      const said = heard.trim();
       if (said) return onHeard(said);
       if (state === 'listening') setState('idle');
       if (handsFree) setTimeout(startListening, 350);
     };
-    try { rec.start(); } catch { listening = false; setState('idle'); }
+    // O Safari do iPhone muitas vezes não encerra sozinho nem marca o resultado como final,
+    // então quem decide que a fala acabou é o silêncio.
+    const stopSoon = (ms) => {
+      clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => {
+        try { r.stop(); } catch {}
+        endTimer = setTimeout(finish, 1200); // se o onend não vier, encerra mesmo assim
+      }, ms);
+    };
+    r.onresult = (e) => {
+      let text = '';
+      for (const res of e.results) text += res[0].transcript;
+      heard = text; heardEl.textContent = text;
+      stopSoon(SILENCE_MS);
+    };
+    r.onerror = (e) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        handsFree = false; $('handsfree').setAttribute('aria-pressed', 'false');
+        heard = ''; finish(); setState('idle', 'Permita o microfone');
+      }
+    };
+    r.onend = finish;
+    try { r.start(); stopSoon(NO_SPEECH_MS); } catch { done = true; listening = false; setState('idle'); }
   }
-  function stopListening() { try { rec && rec.stop(); } catch {} }
+  function stopListening() {
+    clearTimeout(silenceTimer);
+    try { rec && rec.stop(); } catch {}
+    // garante a saída do estado "ouvindo" mesmo se o navegador não avisar
+    const r = rec; clearTimeout(endTimer);
+    endTimer = setTimeout(() => r && r.onend && r.onend(), 1200);
+  }
 
   function onHeard(said) {
     if (handsFree) {
