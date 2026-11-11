@@ -229,9 +229,12 @@
   const synth = window.speechSynthesis;
   let voice = null;
   const pickVoice = () => {
-    const vs = synth ? synth.getVoices() : [];
-    voice = vs.find((v) => /pt[-_]BR/i.test(v.lang) && /male|masc|daniel|felipe|ricardo/i.test(v.name))
-         || vs.find((v) => /pt[-_]BR/i.test(v.lang)) || vs.find((v) => /^pt/i.test(v.lang)) || null;
+    // Prefere as vozes "Premium/Aprimorada" baixadas nos Ajustes do aparelho: soam bem menos robóticas.
+    const pt = (synth ? synth.getVoices() : []).filter((v) => /^pt/i.test(v.lang));
+    const score = (v) =>
+      (/pt[-_]BR/i.test(v.lang) ? 4 : 0) + (/premium/i.test(v.name) ? 3 : /enhanced|aprimorad|natural/i.test(v.name) ? 2 : 0) +
+      (/felipe|daniel|ricardo|antonio|male|masc/i.test(v.name) ? 1 : 0);
+    voice = pt.sort((x, y) => score(y) - score(x))[0] || null;
   };
   if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
   let unlocked = false;
