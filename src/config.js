@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
+const effort = (v, d) => (['low', 'medium', 'high', 'xhigh', 'max'].includes(String(v).toLowerCase()) ? String(v).toLowerCase() : d);
 const num = (v, d) => (v === undefined || v === '' || Number.isNaN(Number(v)) ? d : Number(v));
 
 /** Lê toda a configuração do ambiente. Nada aqui é obrigatório para subir em modo demonstração. */
@@ -23,6 +24,9 @@ export function loadConfig(env = process.env) {
     token: env.JARVIS_TOKEN || '',
 
     model: env.JARVIS_MODEL || 'claude-opus-5-5',
+    // Profundidade de raciocínio: low | medium | high | xhigh | max. Mais alto pensa melhor, demora e custa mais.
+    voiceEffort: effort(env.JARVIS_VOICE_EFFORT, 'medium'),
+    textEffort: effort(env.JARVIS_EFFORT, 'medium'),
     // Modo rápido do modelo nas conversas por voz (responde mais depressa, custa mais por resposta).
     fastVoice: /^(1|true|sim)$/i.test(env.JARVIS_FAST || ''),
     // Velocidade de reprodução da voz no app (1 = normal).

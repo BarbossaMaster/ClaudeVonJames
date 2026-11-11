@@ -9,7 +9,7 @@ const HISTORY_TURNS = 24;
 
 const CHANNEL_STYLE = {
   voice:
-    'Sua resposta será lida em voz alta. Fale como numa conversa: frases curtas, no máximo três ou quatro, sem markdown, listas, emojis ou símbolos. Valores por extenso de forma natural.',
+    'Sua resposta será lida em voz alta. Fale como numa conversa, sem markdown, listas, emojis ou símbolos, com valores por extenso de forma natural. Em pergunta simples, responda em poucas frases. Quando o dono pedir análise, opinião ou plano, pense a fundo e responda com a substância que o assunto merece: a conclusão primeiro, depois os dois ou três pontos que a sustentam, em frases que funcionem ao ouvido. Se o conteúdo for longo ou tiver muitos itens, ofereça gerar um PDF em vez de ditar tudo.',
   whatsapp:
     'Sua resposta vai por WhatsApp. Seja breve, em texto simples; use quebras de linha em vez de markdown.',
   text: 'Responda de forma breve, em texto simples.',
@@ -392,7 +392,7 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
           conversationId: 'owner',
           text,
           channel,
-          effort: channel === 'voice' ? 'low' : 'medium',
+          effort: channel === 'voice' ? config.voiceEffort : config.textEffort,
           fast: channel === 'voice' && config.fastVoice,
           // Os números do dia já vão no contexto: a pergunta mais comum dispensa uma ida e volta de ferramenta.
           context: `[Números das últimas 24 horas, já consultados agora: ${JSON.stringify(snapshot(store, config, days(1)))}. Para outros períodos ou detalhes, use as ferramentas.]`,

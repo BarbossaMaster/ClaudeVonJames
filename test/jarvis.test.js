@@ -74,7 +74,7 @@ test('dono dita a regra por voz e ela passa a valer', async () => {
   // a requisição ao Claude segue o formato esperado e devolve o resultado da ferramenta
   const [first, second] = client.requests;
   assert.equal(first.model, 'claude-opus-5-5');
-  assert.equal(first.output_config.effort, 'low');
+  assert.equal(first.output_config.effort, 'medium');
   assert.match(first.messages.at(-1).content, /lida em voz alta/);
   assert.equal(second.messages.at(-1).content[0].type, 'tool_result');
 
@@ -323,4 +323,11 @@ test('PDF com imagens e gráficos: o modelo recebe o catálogo e o PDF embute a 
   assert.match(desc, /imagem:ID/);
   assert.match(desc, /painel \(Tela do Painel/);
   assert.match(desc, /```grafico/);
+});
+
+test('raciocínio por voz: médio por padrão, ajustável, valor inválido é ignorado', async () => {
+  const a = setup({ script: [say('ok')], env: { JARVIS_VOICE_EFFORT: 'high' } });
+  await a.brain.owner('oi', { channel: 'voice' });
+  assert.equal(a.client.requests[0].output_config.effort, 'high');
+  assert.equal(setup({ env: { JARVIS_VOICE_EFFORT: 'turbo' } }).config.voiceEffort, 'medium');
 });
