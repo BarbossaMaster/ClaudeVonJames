@@ -375,7 +375,8 @@
   // ---------- Voz: escuta ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null, listening = false, retries = 0;
-  const SILENCE_MS = 1600;   // pausa que encerra a fala
+  const SILENCE_MS = 1600;      // pausa que encerra uma fala curta
+  const LONG_SILENCE_MS = 2600; // em fala longa, espera mais (dá tempo de pensar)
   const NO_SPEECH_MS = 8000; // desiste se ninguém falar
   function startListening() {
     if (!SR || listening || state === 'thinking' || state === 'speaking') return;
@@ -412,13 +413,24 @@
       }, ms);
     };
     r.stopNow = () => stopSoon(0);
+    let committed = '', current = '';
     r.onresult = (e) => {
       let text = '';
       for (const res of e.results) text += res[0].transcript;
       results++;
-      // O iPhone às vezes manda um último resultado vazio; não deixa ele apagar o que já foi ouvido.
-      if (text.trim()) heard = text;
-      stopSoon(SILENCE_MS);
+      text = text.trim();
+      if (text) { // resultado vazio (o iPhone manda às vezes no final) não apaga o que já foi ouvido
+        // Em falas longas o iPhone recomeça a transcrição do zero depois de uma pausa.
+        // Quando isso acontece, guarda o trecho anterior em vez de trocar pelo novo.
+        const restarted =
+          current.length > 12 && text.length < current.length * 0.6 &&
+          !current.toLowerCase().startsWith(text.toLowerCase().slice(0, 8));
+        if (restarted) { committed = (committed + ' ' + current).trim(); dbg('escuta: novo trecho'); }
+        current = text;
+        heard = (committed + ' ' + current).trim();
+      }
+      // Fala longa ganha uma pausa maior antes de ser dada como encerrada.
+      stopSoon(heard.split(/\s+/).length > 8 ? LONG_SILENCE_MS : SILENCE_MS);
     };
     r.onerror = (e) => {
       failed = e.error || 'erro'; dbg('escuta: erro ' + failed);
