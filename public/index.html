@@ -375,8 +375,8 @@
   // ---------- Voz: escuta ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null, listening = false, retries = 0;
-  const SILENCE_MS = 1600;      // pausa que encerra uma fala curta
-  const LONG_SILENCE_MS = 2600; // em fala longa, espera mais (dá tempo de pensar)
+  const SILENCE_MS = 3000;      // pausa que encerra uma fala curta
+  const LONG_SILENCE_MS = 4000; // em fala longa, espera mais (dá tempo de pensar)
   const NO_SPEECH_MS = 8000; // desiste se ninguém falar
   function startListening() {
     if (!SR || listening || state === 'thinking' || state === 'speaking') return;
