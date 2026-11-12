@@ -55,8 +55,9 @@ public/
   manifest.webmanifest, icon.svg
 knowledge/
   negocio.md     o que o James sabe sobre a Astro Gold
+  atendimento-whatsapp.md   roteiro do atendimento comercial a leads no WhatsApp
   imagens/       logo, telas do sistema e catálogo (imagens.json)
-test/            19 testes automatizados
+test/            20 testes automatizados
 scripts/demo.js  simulação de dois dias, sem chaves
 docs/            este documento
 ```
@@ -194,7 +195,7 @@ A lista completa, com comentários, está em `.env.example`.
 ```bash
 npm install
 npm run demo     # simulação sem chaves
-npm test         # 19 testes
+npm test         # 20 testes
 cp .env.example .env   # preencher ANTHROPIC_API_KEY e JARVIS_TOKEN
 npm start        # http://localhost:3000
 ```

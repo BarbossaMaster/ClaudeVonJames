@@ -331,3 +331,18 @@ test('raciocínio por voz: médio por padrão, ajustável, valor inválido é ig
   assert.equal(a.client.requests[0].output_config.effort, 'high');
   assert.equal(setup({ env: { JARVIS_VOICE_EFFORT: 'turbo' } }).config.voiceEffort, 'medium');
 });
+
+test('roteiro de atendimento: entra na base dos dois modos, com a orientação de como usar', async () => {
+  const t = setup({ script: [say('Oi!'), say('ok')], env: { KNOWLEDGE_DIR: 'knowledge' } });
+  await t.brain.contact('oi vi o vídeo de vocês', { contact: '5511911112222', contactName: 'Ana' });
+  const lead = t.client.requests[0].system;
+  assert.match(lead, /Arquivo: atendimento-whatsapp\.md/);
+  assert.match(lead, /Nunca mencione Lovable/);
+  assert.match(lead, /siga-o: ele define como conduzir esta conversa/);
+  assert.deepEqual(t.client.requests[0].tools.map((x) => x.name), ['escalate_to_owner']);
+
+  await t.brain.owner('oi');
+  const owner = t.client.requests[1].system;
+  assert.match(owner, /Arquivo: atendimento-whatsapp\.md/);
+  assert.match(owner, /valem para quem está de fora, não para ele/);
+});
