@@ -262,7 +262,7 @@
   const GOLD = [227, 188, 105], WHITE = [255, 245, 222];
   // alvo por estado: giro, energia (quanto a fala move a esfera), branco, brilho, núcleo, agitação
   const TARGET = {
-    idle:      { spin: .045, energy: 0,   white: 0,   glow: .60, core: .40, churn: .06 },
+    idle:      { spin: .045, energy: 0,   white: 0,   glow: .78, core: .40, churn: .06 },
     listening: { spin: .06,  energy: 0,   white: .12, glow: .95, core: .70, churn: .05 },
     thinking:  { spin: .20,  energy: 0,   white: .50, glow: .90, core: 1.0, churn: .36 },
     speaking:  { spin: .07,  energy: .24, white: .18, glow: 1.0, core: .90, churn: .10 },
@@ -281,6 +281,8 @@
         shell, y, phi, rad: Math.sqrt(1 - y * y),
         jit: 1 + (rand() - .5) * .07, seed: rand() * 6.283,
         streak: rand() < .42 ? .05 + rand() * .26 : 0, // traço ao longo da latitude, como um fragmento de dado
+        drift: (rand() - .5) * .16,                     // cada partícula deriva no seu ritmo
+        tw: .5 + rand() * 1.4,                          // ritmo do cintilar
         alt: rand() < .3,                               // parte dos pontos usa a cor secundária
         size: .6 + rand() * 1.1,
       });
@@ -293,7 +295,7 @@
     segs: Array.from({ length: 2 + Math.floor(rand() * 3) }, () => [rand() * 6.283, .35 + rand() * 1.3]),
   }));
 
-  let W = 0, H = 0, T = 0, lastT = 0, rotY = 0, shellRot = [0, 0, 0], arcRot = arcs.map(() => 0), mouth = 0, spiralRot = 0;
+  let W = 0, H = 0, T = 0, lastT = 0, rotY = 0, shellRot = [0, 0, 0], arcRot = arcs.map(() => 0), mouth = 0, spiralRot = 0, sweep = 0;
   function fit() {
     const r = viz.getBoundingClientRect(), d = Math.min(devicePixelRatio || 1, 2);
     viz.width = W = Math.round(r.width * d); viz.height = H = Math.round(r.height * d);
@@ -302,7 +304,7 @@
   const mix = (a, b, t) => a.map((x, i) => Math.round(x + (b[i] - x) * t));
 
   // Ponto da esfera (latitude y, longitude phi, raio r) -> tela, com inclinação e perspectiva.
-  const TILT = .42, cosT = Math.cos(TILT), sinT = Math.sin(TILT);
+  let cosT = Math.cos(.42), sinT = Math.sin(.42); // inclinação do eixo, que oscila devagar a cada quadro
   function project(x, y, z, R, cx, cy) {
     const y2 = y * cosT - z * sinT, z2 = y * sinT + z * cosT;
     const k = 3.2 / (3.2 - z2);
@@ -329,7 +331,16 @@
     const pulse = cur.energy * mouth;
     const breath = Math.sin(T * .9) * .012; // respiração lenta, sempre presente
 
-    const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .265, u = W / 320;
+    // Vida própria: o eixo balança, a esfera flutua, o núcleo bate como um coração lento
+    // e uma onda de luz percorre o corpo de tempos em tempos.
+    const tilt = .42 + Math.sin(T * .21) * .13 + Math.sin(T * .37 + 1) * .05;
+    cosT = Math.cos(tilt); sinT = Math.sin(tilt);
+    const sway = Math.sin(T * .17) * .25 + Math.sin(T * .31 + 2) * .1;      // olha de leve para os lados
+    const beat = Math.pow(Math.max(0, Math.sin(T * 1.25)), 14) + .55 * Math.pow(Math.max(0, Math.sin(T * 1.25 - .55)), 14);
+    const sweepSpeed = .16 + cur.churn * .9;
+    sweep = (sweep + dt * sweepSpeed) % 2.4;                                 // posição da onda de luz, de baixo para cima
+    const sweepY = 1.35 - sweep * 1.5;
+    const cx = W / 2, cy = H / 2 + Math.sin(T * .55) * H * .012, R = Math.min(W, H) * .255, u = W / 320;
     g.clearRect(0, 0, W, H);
     g.globalCompositeOperation = 'lighter';
     const main = mix(GOLD, WHITE, cur.white), second = mix(WHITE, GOLD, .22);
@@ -340,7 +351,7 @@
     halo.addColorStop(.45, rgba(main, .05 * cur.glow));
     halo.addColorStop(1, rgba(main, 0));
     g.fillStyle = halo; g.fillRect(0, 0, W, H);
-    const cr = R * (.16 + cur.core * .1 + pulse * .5);
+    const cr = R * (.16 + cur.core * .1 + pulse * .5 + beat * .07);
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, cr);
     core.addColorStop(0, rgba([255, 251, 240], .8 * cur.core * cur.glow));
     core.addColorStop(.35, rgba(second, .45 * cur.core * cur.glow));
@@ -382,28 +393,37 @@
 
     // partículas e traços, agrupados por cor e profundidade para desenhar rápido
     const dots = {}, lines = {};
+    const flow = .035 + cur.churn * .09; // quanto a superfície ondula
     for (const p of pts) {
       const sh = SHELLS[p.shell];
+      const phi = p.phi + rotY + sway + shellRot[p.shell] + p.drift * T;
+      const ux = Math.cos(phi) * p.rad, uz = Math.sin(phi) * p.rad;
+      // superfície viva: um relevo suave que escorre pela esfera, em vez de um casco rígido
+      const skin = Math.sin(ux * 2.3 + T * .5) * Math.sin(p.y * 1.9 - T * .37 + 1.3) * Math.sin(uz * 2.1 + T * .29) * flow * 3;
       const wob = Math.sin(p.seed + T * 1.1) * (.008 + cur.churn * .05);
       const wave = Math.sin(p.y * 4 - T * 2.6 + p.shell) * pulse * .42;
-      const r = sh.r * p.jit * (1 + breath + wob + wave + pulse * .3);
-      const phi = p.phi + rotY + shellRot[p.shell];
-      const [x, y, z] = project(Math.cos(phi) * p.rad * r, p.y * r, Math.sin(phi) * p.rad * r, R, cx, cy);
-      const depth = (z / sh.r + 1) / 2;                       // 0 atrás, 1 na frente
-      const a = Math.min(3, Math.floor(depth * 4));
-      const key = (p.alt ? 's' : 'm') + a;
+      const band = Math.max(0, 1 - Math.abs(p.y - sweepY) * 5);       // 1 no centro da onda de luz
+      const r = sh.r * p.jit * (1 + breath + skin + wob + wave + pulse * .3 + band * .035 + beat * .012);
+      const [x, y, z] = project(ux * r, p.y * r, uz * r, R, cx, cy);
+      const depth = (z / sh.r + 1) / 2;                               // 0 atrás, 1 na frente
+      const twinkle = .5 + .5 * Math.sin(T * p.tw + p.seed * 3);      // cada ponto acende e apaga no seu tempo
+      const spark = (T * .11 + p.seed) % 1 < .01;                     // faísca rara
+      const lum = depth * .7 + twinkle * .34 + band * .75 + (p.shell === 2 ? beat * .5 : 0);
+      const a = spark ? 4 : Math.max(0, Math.min(4, Math.floor(lum * 4)));
+      const key = (spark || a === 4 ? 'w' : p.alt ? 's' : 'm') + a;
       if (p.streak) {
-        const phi2 = phi + p.streak * (1 + pulse * 2);
+        const phi2 = phi + p.streak * (1 + pulse * 2) * (.7 + twinkle * .5);
         const [x2, y2] = project(Math.cos(phi2) * p.rad * r, p.y * r, Math.sin(phi2) * p.rad * r, R, cx, cy);
         (lines[key] ||= []).push(x, y, x2, y2);
       } else {
-        const sz = p.size * u * (.7 + depth * .9);
+        const sz = p.size * u * (.7 + depth * .9) * (spark ? 2.2 : 1);
         (dots[key] ||= []).push(x - sz / 2, y - sz / 2, sz);
       }
     }
-    const alphaOf = (key) => (.2 + .27 * Number(key[1])) * cur.glow;
+    const tint = (key) => (key[0] === 'w' ? WHITE : key[0] === 's' ? second : main);
+    const alphaOf = (key) => Math.min(1, (.2 + .23 * Number(key[1])) * cur.glow);
     for (const key in dots) {
-      g.fillStyle = rgba(key[0] === 's' ? second : main, alphaOf(key));
+      g.fillStyle = rgba(tint(key), alphaOf(key));
       g.beginPath();
       const d = dots[key];
       for (let i = 0; i < d.length; i += 3) g.rect(d[i], d[i + 1], d[i + 2], d[i + 2]);
@@ -411,7 +431,7 @@
     }
     g.lineCap = 'round';
     for (const key in lines) {
-      g.strokeStyle = rgba(key[0] === 's' ? second : main, alphaOf(key) * .9);
+      g.strokeStyle = rgba(tint(key), alphaOf(key) * .9);
       g.lineWidth = (.7 + Number(key[1]) * .22) * u;
       g.beginPath();
       const d = lines[key];
@@ -426,17 +446,19 @@
       g.beginPath();
       for (const [start, len] of a.segs) {
         for (let j = 0; j <= 26; j++) {
-          const th = start + arcRot[i] + (len * j) / 26;
+          const th = start + arcRot[i] + (len * (.7 + .3 * Math.sin(T * .33 + i * 1.7 + start)) * j) / 26;
           let x = Math.cos(th) * rr, y = 0, z = Math.sin(th) * rr;
           const y1 = y * cxr - z * sxr, z1 = y * sxr + z * cxr;          // inclina em X
           const x2 = x * czr - y1 * szr, y2 = x * szr + y1 * czr;        // inclina em Z
-          const xr = x2 * Math.cos(rotY * .5) - z1 * Math.sin(rotY * .5), zr = x2 * Math.sin(rotY * .5) + z1 * Math.cos(rotY * .5);
+          const ya = rotY * .5 + sway;
+          const xr = x2 * Math.cos(ya) - z1 * Math.sin(ya), zr = x2 * Math.sin(ya) + z1 * Math.cos(ya);
           const [px, py] = project(xr, y2, zr, R, cx, cy);
           j ? g.lineTo(px, py) : g.moveTo(px, py);
         }
       }
-      g.strokeStyle = rgba(col, .10 * cur.glow); g.lineWidth = 5 * u; g.stroke();
-      g.strokeStyle = rgba(col, .62 * cur.glow); g.lineWidth = 1.1 * u; g.stroke();
+      const fade = .55 + .45 * Math.sin(T * .27 + i * 2.1); // cada arco surge e some devagar
+      g.strokeStyle = rgba(col, .10 * cur.glow * fade); g.lineWidth = 5 * u; g.stroke();
+      g.strokeStyle = rgba(col, .62 * cur.glow * fade); g.lineWidth = 1.1 * u; g.stroke();
     });
 
     g.globalCompositeOperation = 'source-over';
