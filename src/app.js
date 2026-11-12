@@ -172,8 +172,18 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
       return res.sendStatus(401);
     }
     res.sendStatus(200); // a Meta exige resposta rápida; o processamento segue em segundo plano
-    for (const msg of parseWebhook(req.body)) {
-      jarvis.handleWhatsApp(msg).catch((e) => log('[jarvis] erro ao tratar mensagem:', e.message));
+    // Uma linha por entrega, para dar para ver no log o que chegou e o que aconteceu (números mascarados).
+    const tail = (n) => '…' + String(n ?? '').slice(-4);
+    const msgs = parseWebhook(req.body);
+    const field = req.body?.entry?.[0]?.changes?.[0]?.field ?? '?';
+    const statuses = req.body?.entry?.[0]?.changes?.[0]?.value?.statuses?.length ?? 0;
+    if (!msgs.length) log(`[jarvis] WhatsApp: entrega sem mensagem (campo "${field}", ${statuses} avisos de status)`);
+    for (const msg of msgs) {
+      log(`[jarvis] WhatsApp: mensagem de ${tail(msg.from)} (${msg.type})${samePhone(msg.from, config.whatsapp.owner) ? ', reconhecido como dono' : ', tratado como contato'}`);
+      jarvis
+        .handleWhatsApp(msg)
+        .then(() => log(`[jarvis] WhatsApp: resposta enviada a ${tail(msg.from)}`))
+        .catch((e) => log('[jarvis] erro ao tratar mensagem:', e.message));
     }
   });
 
