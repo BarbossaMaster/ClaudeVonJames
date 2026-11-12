@@ -300,8 +300,46 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
     return cachedOwnerTools;
   }
 
+  /**
+   * Escolhe o modelo da vez: o do dia a dia para conversa comum, o mais capaz para assunto importante.
+   * Casos óbvios são decididos na hora; o resto passa por um classificador pequeno e rápido.
+   * Qualquer falha na classificação cai no modelo do dia a dia.
+   */
+  async function pickModel(text, conversationId) {
+    if (!config.router || config.smartModel === config.model) return config.model;
+    const t = String(text).trim();
+    if (/\bopus\b|pens[ae] (bem|com calma|a fundo)|com (muita )?calma|capricha/i.test(t)) return config.smartModel;
+    if (/\bsonnet\b|resposta r[aá]pida|rapidinho/i.test(t)) return config.model;
+    if (t.length < 28) return config.model; // cumprimentos, confirmações, perguntas curtas
+    try {
+      const previous = store.history(conversationId, 2).map((h) => `${h.role === 'user' ? 'Dono' : 'Assistente'}: ${h.text.slice(0, 300)}`).join('\n');
+      const res = await getClient().beta.messages.create(
+        {
+          model: config.routerModel,
+          max_tokens: 64,
+          thinking: { type: 'disabled' },
+          output_config: { effort: 'low' },
+          system: `Você classifica a mensagem que o dono de um negócio manda ao assistente dele. Responda com uma única palavra: IMPORTANTE ou SIMPLES.
+
+IMPORTANTE: pede análise, estratégia, plano, proposta, diagnóstico ou opinião sobre uma decisão; envolve dinheiro, preço, contrato, cliente insatisfeito, contratação ou risco; pede um documento ou PDF; pede um texto que vai para cliente ou para fora; qualquer assunto em que uma resposta rasa ou errada custaria caro.
+
+SIMPLES: cumprimento, conversa casual, pergunta sobre números ou status do dia, consulta rápida a um fato, ajuste pequeno de regra, lembrete, confirmação, agradecimento.
+
+Na dúvida entre os dois, responda IMPORTANTE.`,
+          messages: [{ role: 'user', content: `${previous ? `Contexto recente:\n${previous}\n\n` : ''}Mensagem a classificar:\n${t.slice(0, 1500)}` }],
+        },
+        { timeout: 4000, maxRetries: 0 },
+      );
+      const verdict = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('').toUpperCase();
+      return verdict.includes('IMPORTANTE') ? config.smartModel : config.model;
+    } catch (e) {
+      log('[jarvis] classificador de modelo falhou, usando o padrão:', e.message);
+      return config.model;
+    }
+  }
+
   /** Um turno completo: monta o histórico, roda o loop de ferramentas e devolve o texto final. */
-  async function run({ system, tools, handlers, conversationId, text, channel, effort, context = '', fast = false }) {
+  async function run({ system, tools, handlers, conversationId, text, channel, effort, context = '', fast = false, model = config.model }) {
     const history = store.history(conversationId, HISTORY_TURNS);
     const messages = [];
     for (const t of history) {
@@ -323,14 +361,14 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
     let reply = '';
     for (let step = 0; step < MAX_STEPS; step++) {
       const response = await getClient().beta.messages.create({
-        model: config.model,
+        model,
         max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
         thinking: { type: 'adaptive' },
         output_config: { effort },
         // O modo rápido só existe em alguns modelos; nos outros o parâmetro daria erro.
-        ...(fast && /opus-5-5|fable-5-2|mythos-5-2/.test(config.model) ? { speed: 'fast' } : {}),
+        ...(fast && /opus-5-5|fable-5-2|mythos-5-2/.test(model) ? { speed: 'fast' } : {}),
         cache_control: { type: 'ephemeral' },
         system,
         tools,
@@ -387,10 +425,12 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
 
   return {
     /** Conversa com o dono (voz no app, texto ou WhatsApp). */
-    async owner(text, { channel = 'text', documents: created = [] } = {}) {
+    async owner(text, { channel = 'text', documents: created = [], meta = {} } = {}) {
       const rules = getRules(store, config);
       try {
+        meta.model = await pickModel(text, 'owner');
         return await run({
+          model: meta.model,
           system: ownerSystem(config, rules, loadKnowledge(config.knowledgeDir, store)),
           tools: ownerTools(),
           handlers: ownerHandlers({ channel: channel === 'voice' || channel === 'text' ? channel : 'whatsapp', documents: created }),

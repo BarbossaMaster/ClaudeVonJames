@@ -165,8 +165,9 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
       if (!text) return res.status(400).json({ error: 'text é obrigatório' });
       const channel = req.body?.channel === 'voice' ? 'voice' : 'text';
       const created = [];
-      const reply = await brain.owner(text.slice(0, 4000), { channel, documents: created });
-      res.json({ reply, documents: created });
+      const meta = {};
+      const reply = await brain.owner(text.slice(0, 4000), { channel, documents: created, meta });
+      res.json({ reply, documents: created, model: meta.model });
     }),
   );
 

@@ -81,6 +81,8 @@ Como uma resposta é produzida:
 4. Se o Claude pedir uma ferramenta, o servidor executa e devolve o resultado; repete até ele terminar (no máximo 8 voltas).
 5. Guarda a pergunta e a resposta final no banco.
 
+**Troca automática de modelo.** Antes de responder ao dono, o servidor escolhe o modelo: Claude Sonnet 5.5 para conversa comum e Claude Opus 5.5 para assunto importante (análise, estratégia, dinheiro, documentos, texto para cliente). Mensagens curtas e pedidos explícitos ("pensa bem", "usa o Opus") são decididos na hora; o resto passa por um classificador rápido (Claude Haiku 5.5). Se a classificação falhar, vale o Sonnet. `JARVIS_ROUTER=off` desliga. O atendimento a clientes usa sempre o modelo do dia a dia.
+
 Parâmetros da chamada: raciocínio adaptativo, esforço médio por padrão (`JARVIS_VOICE_EFFORT`, `JARVIS_EFFORT`), cache de prompt e fallback automático de modelo em caso de recusa. Se a API falhar, o cliente recebe "vou confirmar com a equipe" e fica uma pendência para o dono.
 
 **Números nunca vêm do modelo.** Contagens e somas saem de consultas ao banco em `briefing.js`; o Claude só as relata.

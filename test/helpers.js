@@ -35,6 +35,8 @@ export function setup({ script = [], env = {}, speech } = {}) {
     OWNER_WHATSAPP: '+55 (11) 98888-7777',
     WHATSAPP_VERIFY_TOKEN: 'verifica',
     KNOWLEDGE_DIR: '/nonexistent',
+    JARVIS_ROUTER: 'off', // a troca automática de modelo é testada à parte
+
     ...env,
   });
   const store = openStore(':memory:', { now: () => clock });

@@ -154,7 +154,7 @@ test('HTTP: token protege a API; webhook verifica; chat e eventos funcionam', as
     assert.equal(state.rules.threshold, 2000);
 
     const chat = await fetch(`${base}/api/chat`, { method: 'POST', headers: auth, body: JSON.stringify({ text: 'Olá', channel: 'voice' }) });
-    assert.deepEqual(await chat.json(), { reply: 'Às ordens.', documents: [] });
+    assert.deepEqual(await chat.json(), { reply: 'Às ordens.', documents: [], model: 'claude-sonnet-5-5' });
 
     const bad = await fetch(`${base}/api/events`, { method: 'POST', headers: auth, body: JSON.stringify({ type: 'hack' }) });
     assert.equal(bad.status, 400);
@@ -352,4 +352,45 @@ test('modo rápido não é enviado a modelos que não o aceitam', async () => {
   await t.brain.owner('oi', { channel: 'voice' });
   assert.equal(t.client.requests[0].model, 'claude-sonnet-5-5');
   assert.equal(t.client.requests[0].speed, undefined);
+});
+
+test('troca automática de modelo: simples no Sonnet, importante no Opus, falha cai no Sonnet', async () => {
+  const on = { JARVIS_ROUTER: 'on' };
+  const verdict = (v) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: v }] });
+
+  // curta: nem consulta o classificador
+  const a = setup({ script: [say('Bom dia.')], env: on });
+  await a.brain.owner('bom dia James');
+  assert.equal(a.client.requests.length, 1);
+  assert.equal(a.client.requests[0].model, 'claude-sonnet-5-5');
+
+  // classificador diz IMPORTANTE: turno inteiro no Opus
+  const b = setup({ script: [verdict('IMPORTANTE'), say('Análise.')], env: on });
+  const meta = {};
+  await b.brain.owner('vale a pena dar 20% de desconto para fechar com a loja da Ana ainda este mês?', { meta });
+  assert.equal(b.client.requests[0].model, 'claude-haiku-5-5');
+  assert.match(b.client.requests[0].messages[0].content, /20% de desconto/);
+  assert.equal(b.client.requests[1].model, 'claude-opus-5-5');
+  assert.equal(meta.model, 'claude-opus-5-5');
+
+  // classificador diz SIMPLES
+  const c = setup({ script: [verdict('SIMPLES'), say('Três vendas.')], env: on });
+  await c.brain.owner('quantas vendas a gente teve hoje até agora mesmo?');
+  assert.equal(c.client.requests[1].model, 'claude-sonnet-5-5');
+
+  // pedido explícito dispensa o classificador
+  const d = setup({ script: [say('Pensando.')], env: on });
+  await d.brain.owner('pensa bem nisso antes de responder');
+  assert.equal(d.client.requests[0].model, 'claude-opus-5-5');
+
+  // classificador fora do ar: segue no Sonnet e responde normalmente
+  const e = setup({ script: [() => { throw new Error('timeout'); }, say('Respondi.')], env: on });
+  assert.equal(await e.brain.owner('me explica como está o funil de prospecção desta semana'), 'Respondi.');
+  assert.equal(e.client.requests[1].model, 'claude-sonnet-5-5');
+
+  // cliente no WhatsApp não passa pela troca
+  const f = setup({ script: [say('Olá!')], env: on });
+  await f.brain.contact('queria entender melhor os planos e valores da plataforma de vocês', { contact: '5521999990000' });
+  assert.equal(f.client.requests.length, 1);
+  assert.equal(f.client.requests[0].model, 'claude-sonnet-5-5');
 });
