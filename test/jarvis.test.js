@@ -136,7 +136,7 @@ test('áudio no WhatsApp: transcreve, responde em áudio; sem voz configurada pe
   const a = setup({ script: [say('Tudo em ordem, senhor.')], speech });
   await a.jarvis.handleWhatsApp({ id: 'a1', from: OWNER, type: 'audio', audioId: 'media1' });
   assert.equal(a.sent[0].audio.toString(), 'voice:Tudo em ordem, senhor.');
-  assert.equal(a.client.requests[0].tools.length, 13, 'áudio do dono usa as ferramentas do dono');
+  assert.equal(a.client.requests[0].tools.length, 16, 'áudio do dono usa as ferramentas do dono');
 
   const b = setup();
   await b.jarvis.handleWhatsApp({ id: 'a1', from: CLIENT, type: 'audio', audioId: 'media1' });
@@ -622,4 +622,33 @@ test('lembretes do Guardião: nascem com as duas pendências, entram no resumo e
   await t.brain.owner('já escolhi o Brevo e criei a chave');
   assert.deepEqual(t.reminders.open().map((r) => r.id), [2]);
   assert.equal(t.reminders.add('Mandar o logo com o nome escrito').id, 3);
+});
+
+test('e-mail marketing (parte 1): contatos por etapa, importação e rascunho escrito pelo James, sem envio', async () => {
+  const t = setup({ script: [use('draft_campaign', { subject: 'Sua marca antes da Black Friday', body: 'Olá, {nome}.\n\nA Astro Gold junta tudo num sistema só.', audience: 'interessado' }), say('Rascunho salvo na aba E-mail. O envio ainda não está ligado.')] });
+  const { base, close } = await serve(t.app);
+  try {
+    const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+    const post = async (path, body) => { const r = await fetch(base + path, { method: 'POST', headers: h, body: JSON.stringify(body) }); return { status: r.status, json: await r.json() }; };
+    assert.equal((await post('/api/mailing/contacts', { name: 'Ana', email: 'ANA@loja.com', stage: 'Demonstração' })).json.contacts[0].stage, 'demonstracao');
+    assert.equal((await post('/api/mailing/contacts', { name: 'x', email: 'sem-arroba' })).status, 422);
+    const imp = await post('/api/mailing/contacts', { lines: 'Bia, bia@marca.com, cliente\ncarol@marca.com\nlinha sem email\nAna Maria; ana@loja.com; cliente' });
+    assert.equal(imp.json.added, 3);
+    assert.deepEqual(imp.json.failed, ['linha sem email']);
+    assert.deepEqual(imp.json.counts, { total: 3, interessado: 1, demonstracao: 0, cliente: 2 }, 'e-mail repetido atualiza em vez de duplicar');
+
+    await fetch(`${base}/api/chat`, { method: 'POST', headers: h, body: JSON.stringify({ text: 'escreve um e-mail para os interessados sobre a Black Friday' }) });
+    const view = await (await fetch(`${base}/api/mailing`, { headers: h })).json();
+    assert.equal(view.drafts[0].subject, 'Sua marca antes da Black Friday');
+    assert.equal(view.drafts[0].status, 'rascunho');
+    const result = JSON.parse(t.client.requests[1].messages.at(-1).content[0].content);
+    assert.equal(result.recipients, 1);
+    assert.match(result.note, /envio ainda não está ligado/);
+    assert.equal(t.sent.length, 0, 'nada é enviado');
+    assert.equal((await fetch(`${base}/api/mailing`)).status, 401);
+    const del = await (await fetch(`${base}/api/mailing/drafts/${view.drafts[0].id}`, { method: 'DELETE', headers: h })).json();
+    assert.equal(del.drafts.length, 0);
+  } finally {
+    await close();
+  }
 });

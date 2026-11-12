@@ -10,6 +10,7 @@ import { createVoiceprints } from './voiceprint.js';
 import { createFiles } from './files.js';
 import { createAgenda } from './agenda.js';
 import { createReminders } from './reminders.js';
+import { createMailing } from './mailing.js';
 import { dirname, join } from 'node:path';
 
 const config = loadConfig();
@@ -29,6 +30,7 @@ const voiceprints = createVoiceprints({ store, config });
 const files = createFiles({ store });
 const agenda = createAgenda({ store, config });
 const reminders = createReminders({ store });
+const mailing = createMailing({ store });
 if (speech.enabled && config.serverListen) voiceprints.warm();
 const links = {};
 const brain = createBrain({
@@ -41,12 +43,13 @@ const brain = createBrain({
   files,
   agenda,
   reminders,
+  mailing,
 });
 const jarvis = createJarvis({ store, config, whatsapp, speech, brain });
 links.jarvis = jarvis;
 
-const app = createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files, agenda, reminders });
-startScheduler({ store, config, notifyOwner: jarvis.notifyOwner, agenda, reminders });
+const app = createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files, agenda, reminders, mailing });
+startScheduler({ store, config, notifyOwner: jarvis.notifyOwner, agenda, reminders, mailing });
 
 app.listen(config.port, () => {
   console.log(`[jarvis] ${config.assistantName} no ar em http://localhost:${config.port}`);

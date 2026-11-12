@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, 
 CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, name TEXT NOT NULL, mime TEXT, pages INTEGER, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS agenda (id INTEGER PRIMARY KEY AUTOINCREMENT, start INTEGER NOT NULL, end INTEGER NOT NULL, title TEXT NOT NULL, notes TEXT, created INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS agenda_start ON agenda(start);
+CREATE TABLE IF NOT EXISTS contacts (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, stage TEXT NOT NULL, notes TEXT);
+CREATE TABLE IF NOT EXISTS campaigns (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, audience TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'rascunho');
 CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, ts INTEGER NOT NULL);
 `;
 
@@ -146,6 +148,24 @@ export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
     listDocuments(limit = 30) {
       return db.prepare('SELECT * FROM documents ORDER BY ts DESC, rowid DESC LIMIT ?').all(limit);
     },
+
+    /** Cria o contato ou atualiza o que já tem esse e-mail. */
+    upsertContact(c) {
+      db.prepare('INSERT INTO contacts (ts, name, email, stage, notes) VALUES (?,?,?,?,?) ON CONFLICT(email) DO UPDATE SET name = excluded.name, stage = excluded.stage, notes = excluded.notes')
+        .run(now(), c.name, c.email, c.stage, c.notes ?? '');
+      return db.prepare('SELECT id, name, email, stage FROM contacts WHERE email = ?').get(c.email);
+    },
+    listContacts(stage) {
+      return stage
+        ? db.prepare('SELECT id, name, email, stage FROM contacts WHERE stage = ? ORDER BY name').all(stage)
+        : db.prepare('SELECT id, name, email, stage FROM contacts ORDER BY name').all();
+    },
+    removeContact(id) { db.prepare('DELETE FROM contacts WHERE id = ?').run(id); },
+    addCampaign(c) {
+      return Number(db.prepare('INSERT INTO campaigns (ts, subject, body, audience) VALUES (?,?,?,?)').run(now(), c.subject, c.body, c.audience).lastInsertRowid);
+    },
+    listCampaigns() { return db.prepare('SELECT * FROM campaigns ORDER BY id DESC LIMIT 100').all(); },
+    removeCampaign(id) { db.prepare('DELETE FROM campaigns WHERE id = ?').run(id); },
 
     addAppointment(a) {
       const r = db.prepare('INSERT INTO agenda (start, end, title, notes, created) VALUES (?,?,?,?,?)').run(a.start, a.end, a.title, a.notes ?? '', now());

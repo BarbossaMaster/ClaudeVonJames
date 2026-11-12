@@ -120,7 +120,7 @@ export function createJarvis({ store, config, whatsapp, speech, brain, log = con
   return { notifyOwner, ingestEvent, handleWhatsApp, sendDocumentToOwner };
 }
 
-export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files, agenda, reminders, log = console.error }) {
+export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files, agenda, reminders, mailing, log = console.error }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -250,6 +250,20 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
     res.set({ 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }).send(agenda.ics());
   });
 
+  // E-mail marketing (primeira parte): contatos e rascunhos. Ainda sem envio.
+  const mailingView = () => ({ contacts: mailing ? mailing.contacts() : [], drafts: mailing ? mailing.drafts() : [], counts: mailing ? mailing.counts() : { total: 0 } });
+  app.get('/api/mailing', auth, (_req, res) => res.json(mailingView()));
+  app.post('/api/mailing/contacts', auth, (req, res) => {
+    if (!mailing) return res.status(503).json({ error: 'lista de e-mail indisponível' });
+    try {
+      const b = req.body ?? {};
+      const imported = b.lines !== undefined ? mailing.importLines(b.lines) : (mailing.addContact(b), { added: 1, failed: [] });
+      res.status(201).json({ ...imported, ...mailingView() });
+    } catch (e) { res.status(422).json({ error: e.message }); }
+  });
+  app.delete('/api/mailing/contacts/:id', auth, (req, res) => { mailing?.removeContact(req.params.id); res.json(mailingView()); });
+  app.delete('/api/mailing/drafts/:id', auth, (req, res) => { mailing?.removeDraft(req.params.id); res.json(mailingView()); });
+
   // Arquivos do dono: enviar (o corpo é o próprio arquivo; o nome vem no cabeçalho x-filename), listar e apagar.
   // Ficam só no modo dono: o atendimento a clientes não enxerga esse material.
   app.get('/api/files', auth, (_req, res) => res.json({ files: files ? files.list() : [] }));
@@ -349,6 +363,7 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
         files: files ? files.list().length : 0,
         next: agenda ? agenda.next() : null,
         reminders: reminders ? reminders.open() : [],
+        contacts: mailing ? mailing.counts().total : 0,
         rules: getRules(store, config).instructions.length,
       },
     });

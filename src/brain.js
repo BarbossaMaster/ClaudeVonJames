@@ -153,6 +153,38 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: 'add_contact',
+    description: 'Inclui uma pessoa na lista de e-mail da marca (ou atualiza, se o e-mail já existir).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        email: { type: 'string' },
+        stage: { type: 'string', enum: ['interessado', 'demonstracao', 'cliente'], description: 'Etapa do relacionamento. Padrão: interessado.' },
+      },
+      required: ['email'],
+    },
+  },
+  {
+    name: 'list_contacts',
+    description: 'Lista os contatos de e-mail, todos ou de uma etapa, com a contagem por etapa.',
+    input_schema: { type: 'object', properties: { stage: { type: 'string', enum: ['interessado', 'demonstracao', 'cliente'] } } },
+  },
+  {
+    name: 'draft_campaign',
+    description:
+      'Salva um rascunho de campanha de e-mail na aba E-mail, para o dono revisar. Escreva o e-mail completo, no tom da marca, pronto para enviar. O envio ainda não está ligado: diga isso ao dono em vez de afirmar que foi enviado.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        subject: { type: 'string', description: 'Assunto do e-mail.' },
+        body: { type: 'string', description: 'Texto do e-mail, em parágrafos simples. Use {nome} onde entra o nome da pessoa.' },
+        audience: { type: 'string', enum: ['todos', 'interessado', 'demonstracao', 'cliente'] },
+      },
+      required: ['subject', 'body', 'audience'],
+    },
+  },
+  {
     name: 'add_reminder',
     description: 'Guarda uma pendência que depende do dono (uma decisão, um acesso, um documento a enviar), para você cobrar depois com tato.',
     input_schema: { type: 'object', properties: { text: { type: 'string', description: 'A pendência, completa e autossuficiente.' } }, required: ['text'] },
@@ -242,13 +274,16 @@ const CONTACT_TOOLS = [
   },
 ];
 
-export function createBrain({ store, config, notifyOwner, sendToContact, documents, sendDocumentToOwner, files, agenda, reminders, client, log = console.error }) {
+export function createBrain({ store, config, notifyOwner, sendToContact, documents, sendDocumentToOwner, files, agenda, reminders, mailing, client, log = console.error }) {
   let anthropic = client;
   const getClient = () => (anthropic ??= new Anthropic());
 
   const days = (n) => store.now() - Math.max(0.05, Number(n) || 1) * 24 * 3600 * 1000;
 
   const ownerHandlers = (ctx) => ({
+    add_contact: (input) => { if (!mailing) throw new Error('lista de e-mail indisponível'); return mailing.addContact(input); },
+    list_contacts: ({ stage }) => { if (!mailing) throw new Error('lista de e-mail indisponível'); return { counts: mailing.counts(), contacts: mailing.contacts(stage).slice(0, 200) }; },
+    draft_campaign: (input) => { if (!mailing) throw new Error('lista de e-mail indisponível'); return { ...mailing.saveDraft(input), note: 'rascunho salvo na aba E-mail; o envio ainda não está ligado' }; },
     add_reminder: ({ text }) => { if (!reminders) throw new Error('lembretes indisponíveis'); return reminders.add(text); },
     complete_reminder: ({ id }) => { if (!reminders) throw new Error('lembretes indisponíveis'); return { done: reminders.complete(id) }; },
     schedule_event: (input) => { if (!agenda) throw new Error('agenda indisponível'); return agenda.add(input); },

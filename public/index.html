@@ -122,6 +122,13 @@
   .grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
   .grid input { background: transparent; border: 0; border-bottom: 1px solid var(--faint); color: var(--text); padding: 10px 0; font: inherit; outline: 0; color-scheme: dark; min-width: 0; }
   .grid input:focus { border-color: var(--green); }
+  .grid select { background: #000; border: 0; border-bottom: 1px solid var(--faint); color: var(--text); padding: 10px 0; font: inherit; outline: 0; min-width: 0; }
+  .draft { border-top: 1px solid var(--line); padding: 12px 0; font-size: 14px; }
+  .draft summary { cursor: pointer; display: flex; gap: 12px; align-items: baseline; list-style: none; }
+  .draft summary::-webkit-details-marker { display: none; }
+  .draft summary b { flex: 1; min-width: 0; font-weight: 500; }
+  .draft summary small { color: var(--muted); flex: none; }
+  .draft pre { white-space: pre-wrap; font: inherit; color: var(--muted); margin: 10px 0 0; }
   .grid .row { display: grid; grid-template-columns: 1.4fr 1fr .8fr; gap: 12px; }
   .btn { justify-self: start; margin-top: 6px; padding: 9px 16px; border: 1px solid color-mix(in srgb, var(--green) 55%, transparent); border-radius: 99px; color: var(--green); font-size: 13px; }
   .linkish { color: var(--muted); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
@@ -225,7 +232,7 @@
 <nav class="tabs" role="tablist" aria-label="Áreas">
   <button role="tab" data-view="nucleo" aria-selected="true">Núcleo</button>
   <button role="tab" data-view="agenda" aria-selected="false">Agenda</button>
-  <button role="tab" data-view="email" aria-selected="false">E-mail<small>em obra</small></button>
+  <button role="tab" data-view="email" aria-selected="false" data-k="tab-email">E-mail<small>parcial</small></button>
   <button role="tab" data-view="ads" aria-selected="false">Anúncios<small>em obra</small></button>
   <button role="tab" data-view="criativos" aria-selected="false">Criativos<small>em obra</small></button>
 </nav>
@@ -249,13 +256,27 @@
 </section>
 
 <section class="view" id="view-email" hidden>
-  <span class="badge">Em construção</span>
+  <span class="badge">Envio em construção</span>
   <h2>E-mail marketing</h2>
-  <p class="lead">O Guardião vai redigir, agendar e acompanhar campanhas de e-mail para clientes e interessados da Astro Gold.</p>
-  <h3>O que vai ter</h3>
-  <ul><li>Listas de contatos por etapa: interessado, em demonstração, cliente</li><li>Campanhas e sequências escritas por ele no tom da marca, com a sua aprovação antes de enviar</li><li>Resultados de cada envio: entregues, abertos, cliques e respostas</li></ul>
-  <h3>O que falta para ligar</h3>
-  <ul><li>Uma conta de envio (por exemplo Brevo, Mailchimp ou Resend) e a chave dela</li><li>O domínio de e-mail da Astro Gold verificado nessa conta</li></ul>
+  <p class="lead">Lista de contatos e rascunhos de campanha já funcionam. Peça ao Guardião: "escreve um e-mail para os interessados sobre a Black Friday". O envio liga quando você escolher o serviço (Brevo, Mailchimp ou Resend).</p>
+  <h3>Contatos <span id="mail-counts"></span></h3>
+  <form class="grid" id="contactform" autocomplete="off">
+    <div class="row">
+      <input type="text" id="c-name" placeholder="Nome" maxlength="120" aria-label="Nome">
+      <input type="email" id="c-email" placeholder="E-mail" required aria-label="E-mail">
+      <select id="c-stage" aria-label="Etapa"><option value="interessado">Interessado</option><option value="demonstracao">Demonstração</option><option value="cliente">Cliente</option></select>
+    </div>
+    <button class="btn" type="submit">Adicionar</button>
+    <div class="err" id="c-err"></div>
+  </form>
+  <details style="margin-top:8px"><summary class="linkish" style="cursor:pointer">Importar uma lista</summary>
+    <textarea id="c-lines" rows="4" placeholder="Uma pessoa por linha: nome, e-mail, etapa" style="width:100%;margin-top:10px;background:transparent;border:1px solid var(--faint);border-radius:8px;color:var(--text);padding:10px;font:inherit;font-size:14px"></textarea>
+    <button class="btn" id="c-import" type="button">Importar</button>
+  </details>
+  <div id="contactlist" style="margin-top:14px"></div>
+  <h3>Rascunhos de campanha</h3>
+  <p id="draftsempty" class="lead">Nenhum rascunho ainda.</p>
+  <div id="draftlist"></div>
 </section>
 
 <section class="view" id="view-ads" hidden>
@@ -1230,13 +1251,14 @@
           get_business_snapshot: 'números do negócio', list_events: 'eventos recentes',
           update_rules: 'regra gravada', resolve_item: 'decisão registrada',
           remember: 'novo saber', create_document: 'documento em redação',
+          add_contact: 'contato adicionado', list_contacts: 'consultando os contatos', draft_campaign: 'rascunho de e-mail salvo',
           add_reminder: 'pendência anotada', complete_reminder: 'pendência concluída',
           schedule_event: 'compromisso marcado', list_agenda: 'consultando a agenda', cancel_event: 'compromisso desmarcado',
           search_files: 'procurando nos arquivos', read_file: 'lendo um arquivo',
         };
         if (sys.smart && trace.model === sys.smart) hud('<b>raciocínio aprofundado</b>');
         // Para cada coisa que ele fez, o feixe aponta a informação correspondente no painel.
-        const AIM = { schedule_event: 'next', list_agenda: 'next', cancel_event: 'next', search_files: 'files', read_file: 'files', remember: 'saberes', add_reminder: 'reminders', complete_reminder: 'reminders' };
+        const AIM = { schedule_event: 'next', list_agenda: 'next', cancel_event: 'next', search_files: 'files', read_file: 'files', remember: 'saberes', add_contact: 'tab-email', draft_campaign: 'tab-email', add_reminder: 'reminders', complete_reminder: 'reminders' };
         for (const tool of trace.tools || []) { hud(ACT[tool] || 'trabalhando'); if (AIM[tool]) point(AIM[tool]); else if (tool === 'get_business_snapshot') point(document.querySelector('.stats')); }
         hud(`resposta em ${((trace.ms || 0) / 1000).toFixed(1).replace('.', ',')} s`);
       }
@@ -1325,8 +1347,53 @@
     document.querySelector('.stage').hidden = name !== 'nucleo';
     if (name === 'nucleo') requestAnimationFrame(fit);
     if (name === 'agenda') loadAgenda();
+    if (name === 'email') loadMailing();
   }
   for (const b of document.querySelectorAll('nav.tabs button')) b.addEventListener('click', () => showView(b.dataset.view));
+
+  // ---------- E-mail: contatos e rascunhos ----------
+  const STAGE_LABEL = { interessado: 'interessado', demonstracao: 'demonstração', cliente: 'cliente', todos: 'todos' };
+  function renderMailing(v) {
+    const c = v.counts || {};
+    $('mail-counts').textContent = c.total ? `· ${c.total} no total · ${c.interessado || 0} interessados · ${c.demonstracao || 0} em demonstração · ${c.cliente || 0} clientes` : '· nenhum ainda';
+    $('contactlist').replaceChildren(...(v.contacts || []).map((p) => {
+      const row = document.createElement('div'); row.className = 'appt';
+      const body = document.createElement('span'); body.textContent = p.name;
+      const sub = document.createElement('small'); sub.textContent = `${p.email} · ${STAGE_LABEL[p.stage] || p.stage}`; body.appendChild(sub);
+      const del = document.createElement('button'); del.textContent = '×'; del.setAttribute('aria-label', 'Remover ' + p.name);
+      del.addEventListener('click', async () => { try { const r = await fetch('/api/mailing/contacts/' + p.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } }); renderMailing(await r.json()); } catch {} });
+      row.append(body, del); return row;
+    }));
+    $('draftsempty').hidden = (v.drafts || []).length > 0;
+    $('draftlist').replaceChildren(...(v.drafts || []).map((d) => {
+      const box = document.createElement('details'); box.className = 'draft';
+      const sum = document.createElement('summary');
+      const title = document.createElement('b'); title.textContent = d.subject;
+      const aud = document.createElement('small'); aud.textContent = 'para ' + (STAGE_LABEL[d.audience] || d.audience) + ' · rascunho';
+      const del = document.createElement('button'); del.textContent = '×'; del.setAttribute('aria-label', 'Apagar rascunho');
+      del.addEventListener('click', async (e) => { e.preventDefault(); try { const r = await fetch('/api/mailing/drafts/' + d.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } }); renderMailing(await r.json()); } catch {} });
+      sum.append(title, aud, del);
+      const body = document.createElement('pre'); body.textContent = d.body;
+      box.append(sum, body); return box;
+    }));
+  }
+  async function loadMailing() { try { renderMailing(await api('/api/mailing')); } catch {} }
+  async function postContacts(payload, errEl) {
+    errEl.textContent = '';
+    try {
+      const res = await fetch('/api/mailing/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(payload) });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error || 'não deu certo');
+      renderMailing(r);
+      if (r.failed && r.failed.length) errEl.textContent = `${r.added} adicionados. Sem e-mail válido: ${r.failed.join(' · ')}`;
+      return true;
+    } catch (x) { errEl.textContent = (x && x.message) || 'erro'; return false; }
+  }
+  $('contactform').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (await postContacts({ name: $('c-name').value, email: $('c-email').value, stage: $('c-stage').value }, $('c-err'))) { $('c-name').value = ''; $('c-email').value = ''; }
+  });
+  $('c-import').addEventListener('click', async () => { if (await postContacts({ lines: $('c-lines').value }, $('c-err'))) $('c-lines').value = ''; });
 
   // ---------- Agenda ----------
   function renderAgenda(events) {

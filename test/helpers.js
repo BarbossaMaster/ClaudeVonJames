@@ -7,6 +7,7 @@ import { createVoiceprints } from '../src/voiceprint.js';
 import { createFiles } from '../src/files.js';
 import { createAgenda } from '../src/agenda.js';
 import { createReminders } from '../src/reminders.js';
+import { createMailing } from '../src/mailing.js';
 
 /** Cliente falso do Claude: devolve respostas roteirizadas e guarda as requisições. */
 export function fakeClaude(script) {
@@ -62,6 +63,7 @@ export function setup({ script = [], env = {}, speech } = {}) {
   const files = createFiles({ store });
   const agenda = createAgenda({ store, config });
   const reminders = createReminders({ store });
+  const mailing = createMailing({ store });
   const voiceprints = createVoiceprints({ store, config, embedder: (samples) => [Math.round(samples[0] * 10), 1, 0] });
   const links = {};
   const quiet = () => {};
@@ -74,11 +76,12 @@ export function setup({ script = [], env = {}, speech } = {}) {
     files,
     agenda,
     reminders,
+    mailing,
   });
   const jarvis = createJarvis({ store, config, whatsapp, speech: sp, brain, log: quiet });
   links.jarvis = jarvis;
-  const app = createApp({ store, config, whatsapp, speech: sp, brain, jarvis, documents, voiceprints, files, agenda, reminders, log: quiet });
-  return { config, store, sent, whatsapp, client, brain, jarvis, app, documents, voiceprints, files, agenda, reminders, advance: (ms) => (clock += ms) };
+  const app = createApp({ store, config, whatsapp, speech: sp, brain, jarvis, documents, voiceprints, files, agenda, reminders, mailing, log: quiet });
+  return { config, store, sent, whatsapp, client, brain, jarvis, app, documents, voiceprints, files, agenda, reminders, mailing, advance: (ms) => (clock += ms) };
 }
 
 export async function serve(app) {
