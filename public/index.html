@@ -31,6 +31,12 @@
   header { display: flex; align-items: center; justify-content: space-between; padding: 18px 0 14px; }
   .brand { display: flex; align-items: center; gap: 10px; }
   .brand i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
+  /* Marca: o logo com um feixe dourado que dá a volta devagar. */
+  .mark { position: relative; width: 34px; height: 34px; display: grid; place-items: center; flex: none; }
+  .mark img { width: 22px; height: auto; display: block; }
+  .mark::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid transparent; border-top-color: var(--purple); border-right-color: color-mix(in srgb, var(--green) 45%, transparent); filter: drop-shadow(0 0 3px var(--green)); animation: orbit 9s linear infinite; }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .mark::before { animation: none; } }
   .brand h1 { font-size: 13px; font-weight: 500; letter-spacing: .32em; text-transform: uppercase; margin: 0; }
   .actions { display: flex; align-items: center; gap: 18px; font-size: 13px; color: var(--muted); }
   .toggle { display: flex; align-items: center; gap: 8px; }
@@ -96,7 +102,7 @@
   .hud-row b { font-weight: 500; color: var(--green); }
   .hud-row i { font-style: normal; color: var(--text); }
   /* Pulso de conhecimento: bate devagar o tempo todo e dispara quando ele aprende algo. */
-  .kp { display: block; width: 6px; height: 6px; position: absolute; left: -15px; top: 21px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: kp 3.4s ease-in-out infinite; }
+  .kp { display: block; width: 6px; height: 6px; position: absolute; left: -13px; top: 21px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: kp 3.4s ease-in-out infinite; }
   .kp::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid var(--green); opacity: 0; animation: kpring 3.4s ease-out infinite; }
   .kp.gain { animation-duration: .7s; background: var(--purple); box-shadow: 0 0 14px var(--purple); }
   .kp.gain::after { animation-duration: .7s; border-color: var(--purple); }
@@ -119,7 +125,9 @@
   /* Celular: o painel ocupa espaço, então os números do dia encolhem e a página pode rolar em vez de sobrepor. */
   @media (max-width: 899px) {
     .actions { gap: 10px; font-size: 12px; }
-    .brand h1 { letter-spacing: .22em; }
+    .brand h1 { display: none; } /* no celular fica só o logo, para caber */
+    .mark { width: 28px; height: 28px; } .mark img { width: 18px; }
+    .actions { gap: 8px; }
     .toggle { white-space: nowrap; gap: 6px; }
     main { gap: 8px; flex: 1 0 auto; min-height: 0; padding: 10px 0 6px; }
     body:not(.hud-off) .stat { padding: 8px 0 7px; }
@@ -166,7 +174,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><i></i><h1 id="name">Jarvis</h1></div>
+  <div class="brand"><span class="mark"><img src="logo.png" alt=""></span><h1 id="name"><span class="long">Guardião da </span><span id="brandname">marca</span></h1></div>
   <div class="actions">
     <button class="toggle" id="handsfree" aria-pressed="false" title="Conversa sem tocar: ele ouve o tempo todo e responde quando você fala com ele"><span class="sw"></span>Conversa</button>
     <button id="hudbtn" aria-pressed="true" title="Mostrar ou minimizar a telemetria (também por voz: 'liga o painel', 'minimiza o painel')">HUD</button>
@@ -273,7 +281,7 @@
     $('hud-sys').innerHTML =
       `desperto há <i>${sys.bornAt ? life : '—'}</i><br><span class="kp${gain ? ' gain' : ''}"></span>saberes <i class="${gain ? 'up' : ''}">${sys.saberes ?? '—'}</i>`;
     $('hud-clock').innerHTML =
-      `<i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i><br>memórias <i>${sys.memorias ?? '—'}</i>`;
+      `agora <i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i><br>memórias <i>${sys.memorias ?? '—'}</i>`;
   }
   // Quando saberes ou memórias aumentam, o pulso dispara e o número sobe contando.
   function setKnowledge(saberes, memorias) {
@@ -681,7 +689,7 @@
         setKnowledge(s.system.saberes, s.system.memorias);
       }
       assistant = s.assistant || 'Jarvis'; serverVoice = Boolean(s.voice); voiceRate = Number(s.voiceRate) || 1;
-      $('name').textContent = assistant; document.title = assistant;
+      $('brandname').textContent = s.business || 'marca'; document.title = assistant;
       orb.setAttribute('aria-label', 'Falar com o ' + assistant);
       $('s-q').textContent = s.today.questionsAnswered;
       $('s-m').textContent = s.today.newMembers;

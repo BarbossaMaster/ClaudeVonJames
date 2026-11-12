@@ -267,6 +267,7 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
   app.get('/api/state', auth, (_req, res) => {
     res.json({
       assistant: config.assistantName,
+      business: config.businessName,
       now: store.now(),
       rules: getRules(store, config),
       today: snapshot(store, config, store.now() - DAY),
