@@ -563,7 +563,8 @@
   // Parado ele respira; ouvindo acende; pensando as camadas giram e clareiam; falando pulsa no volume real da voz.
   const viz = $('viz'), g = viz.getContext('2d');
   // Âmbar profundo, com realces em laranja claro (nomes mantidos do tema anterior).
-  const GOLD = [236, 124, 18], WHITE = [255, 190, 84];
+  const GOLD = [238, 98, 12], WHITE = [255, 170, 60];
+  const NEON = [255, 206, 74]; // amarelo dos pontos que cintilam
   // alvo por estado: giro, energia (quanto a fala move a esfera), branco, brilho, núcleo, agitação
   const TARGET = {
     idle:      { spin: .045, energy: 0,   white: 0,   glow: .78, core: .40, churn: .06 },
@@ -697,7 +698,7 @@
     g.fillStyle = halo; g.fillRect(0, 0, W, H);
     const cr = R * (.16 + cur.core * .1 + pulse * .5 + beat * .07);
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, cr);
-    core.addColorStop(0, rgba([255, 205, 130], .6 * cur.core * cur.glow));
+    core.addColorStop(0, rgba([255, 190, 90], .6 * cur.core * cur.glow));
     core.addColorStop(.35, rgba(second, .45 * cur.core * cur.glow));
     core.addColorStop(1, rgba(second, 0));
     g.fillStyle = core; g.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
@@ -755,10 +756,10 @@
       // piscadas de um décimo de segundo ao mesmo tempo, o que dava a impressão de uma camada frenética).
       const sp = p.sparky ? ((T * .045 + p.seed) % 1) / .05 : 2;
       const spark = sp < 1 ? Math.sin(sp * Math.PI) : 0;
-      const lum = depth * .7 + twinkle * .34 + pulse * 1.3 + band * .75 + (p.shell === 2 ? beat * .5 : 0);
+      const lum = depth * .68 + twinkle * .42 + pulse * 1.3 + band * .75 + (p.shell === 2 ? beat * .5 : 0);
       // oito níveis de brilho: a passagem de um para outro fica suave, sem pulos visíveis
       const a = Math.max(0, Math.min(7, Math.floor((lum + spark * .9) * 7)));
-      const key = (a === 7 ? 'w' : p.alt ? 's' : 'm') + a;
+      const key = (a === 7 ? 'w' : p.alt ? 's' : 'm') + a; // só o nível mais alto é o que cintila
       if (p.streak) {
         const phi2 = phi + p.streak * (1 + pulse * .4) * (.7 + twinkle * .5);
         const [x2, y2] = project(Math.cos(phi2) * p.rad * r, p.y * r, Math.sin(phi2) * p.rad * r, R, cx, cy);
@@ -768,9 +769,12 @@
         (dots[key] ||= []).push(x - sz / 2, y - sz / 2, sz);
       }
     }
-    const tint = (key) => (key[0] === 'w' ? WHITE : key[0] === 's' ? second : main);
+    const tint = (key) => (key[0] === 'w' ? NEON : key[0] === 's' ? second : main);
+    // As partes que cintilam ganham um contorno de luz amarela, discreto.
+    const neon = (key) => { if (key[0] === 'w') { g.shadowColor = rgba(NEON, .7); g.shadowBlur = 3.5 * u; } else g.shadowBlur = 0; };
     const alphaOf = (key) => Math.min(1, (.13 + .105 * Number(key[1])) * cur.glow);
     for (const key in dots) {
+      neon(key);
       g.fillStyle = rgba(tint(key), alphaOf(key));
       g.beginPath();
       const d = dots[key];
@@ -779,6 +783,7 @@
     }
     g.lineCap = 'round';
     for (const key in lines) {
+      neon(key);
       g.strokeStyle = rgba(tint(key), alphaOf(key) * .9);
       g.lineWidth = (.7 + Number(key[1]) * .12) * u;
       g.beginPath();
@@ -787,6 +792,7 @@
       g.stroke();
     }
 
+    g.shadowBlur = 0;
     // arcos orbitais: um traço largo e fraco por baixo dá o brilho, um fino por cima dá a nitidez
     arcs.forEach((a, i) => {
       const cxr = Math.cos(a.tiltX), sxr = Math.sin(a.tiltX), czr = Math.cos(a.tiltZ), szr = Math.sin(a.tiltZ);
