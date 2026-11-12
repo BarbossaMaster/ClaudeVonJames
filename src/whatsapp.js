@@ -13,12 +13,25 @@ export function createWhatsApp(cfg, { fetchImpl = fetch, log = console.log } = {
 
   const digits = (to) => String(to).replace(/\D/g, ''); // a API espera só dígitos, com DDI
 
+  // Números brasileiros existem em dois formatos (com e sem o nono dígito) e a Meta só aceita o que
+  // está cadastrado para aquele contato. Se o envio for recusado, tenta uma vez no outro formato.
+  const otherBrFormat = (to) => {
+    const d = String(to ?? '');
+    if (/^55\d{2}9\d{8}$/.test(d)) return d.slice(0, 4) + d.slice(5);
+    if (/^55\d{10}$/.test(d)) return d.slice(0, 4) + '9' + d.slice(4);
+    return null;
+  };
   async function call(path, body) {
-    const res = await fetchImpl(`${base}/${path}`, {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const post = (payload) =>
+      fetchImpl(`${base}/${path}`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    let res = await post(body);
+    const alt = !res.ok && res.status === 400 && body.to ? otherBrFormat(body.to) : null;
+    if (alt) {
+      const first = (await res.text()).slice(0, 300);
+      res = await post({ ...body, to: alt });
+      if (!res.ok) throw new Error(`WhatsApp ${res.status}: ${first}`);
+      return res.json();
+    }
     if (!res.ok) throw new Error(`WhatsApp ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return res.json();
   }

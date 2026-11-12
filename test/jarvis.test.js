@@ -500,3 +500,15 @@ test('transcrição: ElevenLabs primeiro; sem permissão na chave, explica o que
   await assert.rejects(() => s.transcribe(Buffer.from('wav'), 'audio/wav'), /permissão de Speech to Text/);
   assert.equal(createSpeech({}).enabled, false);
 });
+
+test('WhatsApp: envio recusado para número brasileiro tenta o outro formato do nono dígito', async () => {
+  const tried = [];
+  const fetchImpl = async (_url, init) => {
+    const to = JSON.parse(init.body).to; tried.push(to);
+    return to === '5531988887777' ? { ok: true, status: 200, json: async () => ({}) } : { ok: false, status: 400, text: async () => '(#131030) Recipient phone number not in allowed list' };
+  };
+  const wa = createWhatsApp({ token: 't', phoneNumberId: '1', appSecret: 's', graphVersion: 'v21.0' }, { fetchImpl });
+  await wa.sendText('553188887777', 'oi');
+  assert.deepEqual(tried, ['553188887777', '5531988887777']);
+  await assert.rejects(() => wa.sendText('14155550100', 'oi'), /131030/, 'número de outro país não tem segunda tentativa');
+});
