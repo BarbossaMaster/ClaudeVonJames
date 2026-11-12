@@ -98,6 +98,34 @@
   dialog form.bar { margin: 0; }
   .err { color: var(--danger); font-size: 13px; min-height: 1.3em; margin-top: 10px; }
 
+  /* Abas: Núcleo é a conversa; as demais são as áreas de trabalho do Guardião. */
+  [hidden] { display: none !important; }
+  nav.tabs { display: flex; gap: 22px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button { flex: none; padding: 9px 0 10px; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid transparent; margin-bottom: -1px; }
+  nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--green); }
+  nav.tabs button small { font-size: 8px; letter-spacing: .1em; color: var(--muted); margin-left: 6px; vertical-align: 1px; }
+  .view { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 22px 0 28px; overflow-y: auto; }
+  .view h2 { margin: 0 0 4px; font-size: 13px; font-weight: 500; letter-spacing: .28em; text-transform: uppercase; }
+  .view .lead { color: var(--muted); font-size: 14px; margin: 0 0 20px; max-width: 60ch; }
+  .view h3 { margin: 22px 0 8px; font: 10px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 400; }
+  .view ul { margin: 0; padding: 0; list-style: none; }
+  .view li { padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .badge { display: inline-block; font: 9px/1 ui-monospace, Menlo, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 45%, transparent); border-radius: 99px; padding: 5px 9px; margin-bottom: 14px; }
+  .day { margin-top: 18px; }
+  .day > b { display: block; font: 10px/1.6 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--green); font-weight: 400; margin-bottom: 2px; }
+  .appt { display: flex; align-items: baseline; gap: 14px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .appt time { flex: none; width: 46px; font-variant-numeric: tabular-nums; color: var(--text); }
+  .appt span { flex: 1; min-width: 0; }
+  .appt small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .appt button { flex: none; color: var(--muted); padding: 0 4px; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .grid input { background: transparent; border: 0; border-bottom: 1px solid var(--faint); color: var(--text); padding: 10px 0; font: inherit; outline: 0; color-scheme: dark; min-width: 0; }
+  .grid input:focus { border-color: var(--green); }
+  .grid .row { display: grid; grid-template-columns: 1.4fr 1fr .8fr; gap: 12px; }
+  .btn { justify-self: start; margin-top: 6px; padding: 9px 16px; border: 1px solid color-mix(in srgb, var(--green) 55%, transparent); border-radius: 99px; color: var(--green); font-size: 13px; }
+  .linkish { color: var(--muted); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+
   /* HUD: telemetria real em volta do núcleo. Some inteiro com body.hud-off. */
   .hud-row { width: 100%; max-width: 560px; display: flex; justify-content: space-between; gap: 12px; font: 10px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
   .hud-row > div:last-child { text-align: right; }
@@ -181,11 +209,67 @@
   <div class="actions">
     <button class="toggle" id="handsfree" aria-pressed="false" title="Conversa sem tocar: ele ouve o tempo todo e responde quando você fala com ele"><span class="sw"></span>Conversa</button>
     <button id="hudbtn" aria-pressed="true" title="Mostrar ou minimizar a telemetria (também por voz: 'liga o painel', 'minimiza o painel')">HUD</button>
-    <button id="voicebtn" title="Ensinar o assistente a reconhecer a sua voz">Voz</button>
+    <button id="voicebtn" hidden title="Ensinar o assistente a reconhecer a sua voz">Voz</button>
     <button id="docsbtn" title="Documentos gerados">Docs</button>
     <button id="logout" title="Trocar token">Sair</button>
   </div>
 </header>
+
+<nav class="tabs" role="tablist" aria-label="Áreas">
+  <button role="tab" data-view="nucleo" aria-selected="true">Núcleo</button>
+  <button role="tab" data-view="agenda" aria-selected="false">Agenda</button>
+  <button role="tab" data-view="email" aria-selected="false">E-mail<small>em obra</small></button>
+  <button role="tab" data-view="ads" aria-selected="false">Anúncios<small>em obra</small></button>
+  <button role="tab" data-view="criativos" aria-selected="false">Criativos<small>em obra</small></button>
+</nav>
+
+<section class="view" id="view-agenda" hidden>
+  <h2>Agenda</h2>
+  <p class="lead">Seus compromissos. Marque aqui ou peça por voz: "marca uma demonstração com a Ana amanhã às três da tarde". O resumo das 18h traz o que vem a seguir.</p>
+  <form class="grid" id="apptform" autocomplete="off">
+    <input type="text" id="appt-title" placeholder="O que é e com quem" maxlength="160" required aria-label="Compromisso">
+    <div class="row">
+      <input type="date" id="appt-date" required aria-label="Dia">
+      <input type="time" id="appt-time" required aria-label="Hora">
+      <input type="number" id="appt-min" min="5" max="1440" step="5" value="60" aria-label="Duração em minutos" title="Duração em minutos">
+    </div>
+    <button class="btn" type="submit">Marcar</button>
+    <div class="err" id="appt-err"></div>
+  </form>
+  <div id="apptlist"></div>
+  <p id="apptempty" class="lead" style="margin-top:22px">Nenhum compromisso marcado.</p>
+  <p style="margin-top:26px"><a class="linkish" id="icslink" href="#" target="_blank" rel="noopener">Ver no calendário do celular (endereço para assinar)</a></p>
+</section>
+
+<section class="view" id="view-email" hidden>
+  <span class="badge">Em construção</span>
+  <h2>E-mail marketing</h2>
+  <p class="lead">O Guardião vai redigir, agendar e acompanhar campanhas de e-mail para clientes e interessados da Astro Gold.</p>
+  <h3>O que vai ter</h3>
+  <ul><li>Listas de contatos por etapa: interessado, em demonstração, cliente</li><li>Campanhas e sequências escritas por ele no tom da marca, com a sua aprovação antes de enviar</li><li>Resultados de cada envio: entregues, abertos, cliques e respostas</li></ul>
+  <h3>O que falta para ligar</h3>
+  <ul><li>Uma conta de envio (por exemplo Brevo, Mailchimp ou Resend) e a chave dela</li><li>O domínio de e-mail da Astro Gold verificado nessa conta</li></ul>
+</section>
+
+<section class="view" id="view-ads" hidden>
+  <span class="badge">Em construção</span>
+  <h2>Anúncios</h2>
+  <p class="lead">Painel das campanhas do Facebook e Instagram, com leitura do Guardião sobre o que está funcionando.</p>
+  <h3>O que vai ter</h3>
+  <ul><li>Gasto, alcance, cliques, custo por lead e retorno, por campanha e por dia</li><li>Alerta quando o custo de uma campanha sobe ou o orçamento está acabando</li><li>Resumo semanal com o que pausar, manter e aumentar</li></ul>
+  <h3>O que falta para ligar</h3>
+  <ul><li>Acesso à conta de anúncios da Meta, com um token da API de Marketing</li><li>O identificador da conta de anúncios</li></ul>
+</section>
+
+<section class="view" id="view-criativos" hidden>
+  <span class="badge">Em construção</span>
+  <h2>Criativos</h2>
+  <p class="lead">Biblioteca das peças da marca, com desempenho de cada uma e novas ideias geradas pelo Guardião.</p>
+  <h3>O que vai ter</h3>
+  <ul><li>Imagens e vídeos organizados por campanha, com os números de cada peça</li><li>Roteiros de Reels, legendas e variações de texto no tom da Astro Gold</li><li>Geração de imagens e vídeos por um serviço externo, quando você escolher qual</li></ul>
+  <h3>O que falta para ligar</h3>
+  <ul><li>A ligação com os anúncios (aba ao lado), de onde vêm os números</li><li>A escolha do serviço de geração de imagem e vídeo</li></ul>
+</section>
 
 <section class="stats" aria-label="Últimas 24 horas">
   <div class="stat"><b id="s-q">–</b><span>Respondidas</span></div>
@@ -289,9 +373,9 @@
     const life = `${pad(Math.floor(up / 3600))}:${pad(Math.floor(up / 60) % 60)}:${pad(up % 60)}`;
     const gain = sys.gainUntil > Date.now();
     $('hud-sys').innerHTML =
-      `desperto há <i>${sys.bornAt ? life : '—'}</i><br><span class="kp${gain ? ' gain' : ''}"></span>saberes <i class="${gain ? 'up' : ''}">${sys.saberes ?? '—'}</i>`;
+      `desperto há <i>${sys.bornAt ? life : '—'}</i><br><span class="kp${gain ? ' gain' : ''}"></span>saberes <i class="${gain ? 'up' : ''}">${sys.saberes ?? '—'}</i><br>próximo <i>${sys.next ? esc(sys.next) : '—'}</i>`;
     $('hud-clock').innerHTML =
-      `agora <i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i><br>memórias <i>${sys.memorias ?? '—'}</i>`;
+      `agora <i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i><br>memórias <i>${sys.memorias ?? '—'}</i><br>arquivos <i>${sys.files ?? '—'}</i>`;
   }
   // Quando saberes ou memórias aumentam, o pulso dispara e o número sobe contando.
   function setKnowledge(saberes, memorias) {
@@ -317,6 +401,7 @@
     if (/\b(lig|ativ|mostr|abr|exib|expand|maximiz|volt)/.test(t)) return true;
     return null;
   }
+  let view = 'nucleo'; // aba aberta
   let token = mem.get('jarvis_token') || '';
   let assistant = 'Jarvis';
   let state = 'idle';
@@ -480,6 +565,7 @@
   }
 
   function draw(t) {
+    if (view !== 'nucleo') { lastT = t; return requestAnimationFrame(draw); } // outra aba aberta: não gasta bateria
     const dt = Math.min(.05, (t - lastT) / 1000 || 0); lastT = t;
     const tg = TARGET[orb.dataset.state] || TARGET.idle, ease = still ? 1 : Math.min(1, dt * 4);
     for (const k in cur) cur[k] += (tg[k] - cur[k]) * ease;
@@ -689,6 +775,13 @@
         // O relógio de vida usa a hora do servidor, para não depender do relógio do aparelho.
         serverListen = Boolean(s.system.listen) && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
         voicePeople = (s.system.voiceprint && s.system.voiceprint.people) || [];
+        sys.files = s.system.files ?? 0;
+        // Próximo compromisso, curto: "sex 15:30 · Demonstração com a Ana"
+        const nx = s.system.next;
+        // Dia e hora vêm prontos do servidor, no fuso do negócio, para não depender do fuso do aparelho.
+        sys.next = nx ? `${nx.when.slice(0, 3)} ${(nx.when.match(/(\d{2}:\d{2})\s*$/) || ['', ''])[1]} · ${nx.title.slice(0, wide.matches ? 28 : 16)}` : '';
+        // O botão Voz só aparece quando a escuta pelo servidor está ligada; antes disso ele não faz nada.
+        $('voicebtn').hidden = !s.system.listen;
         sys.bornAt = s.system.bornAt || 0; sys.clockSkew = (s.now || Date.now()) - Date.now();
         if (first) {
           const up = Math.floor(((s.now || Date.now()) - sys.bornAt) / 86400000);
@@ -1080,6 +1173,8 @@
           get_business_snapshot: 'números do negócio', list_events: 'eventos recentes',
           update_rules: 'regra gravada', resolve_item: 'decisão registrada',
           remember: 'novo saber', create_document: 'documento em redação',
+          schedule_event: 'compromisso marcado', list_agenda: 'consultando a agenda', cancel_event: 'compromisso desmarcado',
+          search_files: 'procurando nos arquivos', read_file: 'lendo um arquivo',
         };
         if (sys.smart && trace.model === sys.smart) hud('<b>raciocínio aprofundado</b>');
         for (const tool of trace.tools || []) hud(ACT[tool] || 'trabalhando');
@@ -1160,6 +1255,64 @@
   });
   wide.addEventListener('change', () => { if (state === 'idle') setState('idle'); });
   desk.addEventListener('change', () => { if (state === 'idle') setState('idle'); });
+  // ---------- Abas ----------
+  function showView(name) {
+    view = name;
+    for (const b of document.querySelectorAll('nav.tabs button')) b.setAttribute('aria-selected', String(b.dataset.view === name));
+    for (const v of document.querySelectorAll('.view')) v.hidden = v.id !== 'view-' + name;
+    document.querySelector('.stats').hidden = name !== 'nucleo';
+    document.querySelector('.stage').hidden = name !== 'nucleo';
+    if (name === 'nucleo') requestAnimationFrame(fit);
+    if (name === 'agenda') loadAgenda();
+  }
+  for (const b of document.querySelectorAll('nav.tabs button')) b.addEventListener('click', () => showView(b.dataset.view));
+
+  // ---------- Agenda ----------
+  function renderAgenda(events) {
+    $('apptempty').hidden = events.length > 0;
+    const days = new Map();
+    for (const e of events) { if (!days.has(e.day)) days.set(e.day, []); days.get(e.day).push(e); }
+    $('apptlist').replaceChildren(...[...days].map(([day, list]) => {
+      const box = document.createElement('div'); box.className = 'day';
+      const head = document.createElement('b');
+      head.textContent = new Date(day + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+      box.appendChild(head);
+      for (const e of list) {
+        const row = document.createElement('div'); row.className = 'appt';
+        const t = document.createElement('time'); t.textContent = (e.when.match(/(\d{2}:\d{2})\s*$/) || [, ''])[1];
+        const body = document.createElement('span'); body.textContent = e.title;
+        const sub = document.createElement('small'); sub.textContent = `${e.minutes} min${e.notes ? ' · ' + e.notes : ''}`; body.appendChild(sub);
+        const del = document.createElement('button'); del.textContent = '×'; del.setAttribute('aria-label', 'Desmarcar ' + e.title);
+        del.addEventListener('click', async () => {
+          try { const r = await fetch('/api/agenda/' + e.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } }); renderAgenda((await r.json()).events); hud('compromisso desmarcado'); refresh(); } catch {}
+        });
+        row.append(t, body, del); box.appendChild(row);
+      }
+      return box;
+    }));
+  }
+  async function loadAgenda() {
+    try {
+      const r = await api('/api/agenda');
+      renderAgenda(r.events);
+      if (r.ics) $('icslink').href = r.ics;
+    } catch {}
+  }
+  $('apptform').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('appt-err'); err.textContent = '';
+    try {
+      const res = await fetch('/api/agenda', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ title: $('appt-title').value, start: `${$('appt-date').value}T${$('appt-time').value}`, duration_minutes: Number($('appt-min').value) || 60 }),
+      });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error || 'não deu certo');
+      $('appt-title').value = ''; hud(`agendado · <b>${esc(r.title)}</b>`);
+      loadAgenda(); refresh();
+    } catch (x) { err.textContent = (x && x.message) || 'erro'; }
+  });
+
   $('hudbtn').addEventListener('click', () => { setHud(!hudOn); if (hudOn) hud('painel ativado'); });
   // Cadastro de voz: três amostras de oito segundos dão um reconhecimento estável.
   function voiceStatus(st) {
