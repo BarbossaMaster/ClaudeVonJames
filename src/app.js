@@ -357,6 +357,8 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
         bornAt: bornAt(),
         // O app grava e o servidor transcreve quando há serviço de transcrição; senão usa o do navegador.
         listen: Boolean(speech?.enabled) && config.serverListen,
+        // O servidor consegue transcrever? O app usa isso como reserva quando o reconhecimento do navegador falha.
+        listenAvailable: Boolean(speech?.enabled),
         voiceprint: voiceprints ? voiceprints.status() : { available: false, people: [] },
         ...knowledgeStats(),
         documents: documents ? documents.list(200).length : 0,

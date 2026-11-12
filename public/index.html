@@ -495,6 +495,8 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   // Quando o servidor transcreve, o app grava o microfone e percebe sozinho o começo e o fim da fala.
   let serverListen = false, voicePeople = [];
+  let canFallback = false;                                   // o servidor sabe transcrever
+  let preferServer = mem.get('jarvis_engine') === 'server';  // este navegador já precisou da reserva antes
   const canHear = () => serverListen || !!SR;
 
   const setState = (s, label) => {
@@ -865,7 +867,9 @@
         const first = !sys.model;
         sys.model = s.system.model; sys.smart = s.system.smartModel || ''; sys.voice = s.system.voice;
         // O relógio de vida usa a hora do servidor, para não depender do relógio do aparelho.
-        serverListen = Boolean(s.system.listen) && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        const hasMic = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        canFallback = Boolean(s.system.listenAvailable) && hasMic;
+        serverListen = hasMic && (Boolean(s.system.listen) || (preferServer && canFallback && desk.matches));
         voicePeople = (s.system.voiceprint && s.system.voiceprint.people) || [];
         const before = { files: sys.files, next: sys.next, reminders: sys.reminders };
         sys.reminders = (s.system.reminders || []).length;
@@ -1138,7 +1142,7 @@
       r = await res.json();
       if (!res.ok) throw new Error(r.error || 'HTTP ' + res.status);
     } catch (e) {
-      hud('não consegui transcrever'); dbg('escuta: ' + e.message);
+      hud(`não consegui transcrever · ${esc(String(e.message).slice(0, 90))}`); dbg('escuta: ' + e.message);
       return resume();
     }
     const text = (r.text || '').trim(), sp = r.speaker || {};
@@ -1192,6 +1196,14 @@
       if (state === 'listening') setState('idle');
       // O iPhone às vezes recusa o microfone logo depois de tocar áudio; tenta de novo sozinho.
       if (failed) hud(`escuta falhou · <b>${esc(failed)}</b>`);
+      // O Safari do Mac costuma derrubar o próprio reconhecimento ("aborted"). Na segunda falha seguida,
+      // o app passa a gravar o microfone e mandar para o servidor transcrever, e lembra dessa escolha.
+      if (desk.matches && /aborted|audio-capture|network/.test(failed) && retries >= 1 && canFallback) { // só no computador: no celular o reconhecimento do aparelho funciona
+        retries = 0; serverListen = true; preferServer = true; mem.set('jarvis_engine', 'server');
+        hud('trocando para a escuta pelo servidor');
+        if (state === 'listening') setState('idle');
+        return setTimeout(startListening, 200);
+      }
       if (/aborted|audio-capture|network/.test(failed) && retries < 2) { retries++; return setTimeout(startListening, 450); }
       retries = 0;
       if (handsFree) setTimeout(startListening, 350);
