@@ -339,7 +339,9 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
   }
 
   /** Um turno completo: monta o histórico, roda o loop de ferramentas e devolve o texto final. */
-  async function run({ system, tools, handlers, conversationId, text, channel, effort, context = '', fast = false, model = config.model }) {
+  async function run({ system, tools, handlers, conversationId, text, channel, effort, context = '', fast = false, model = config.model, trace = {} }) {
+    // Rastro do turno, mostrado no painel do app: voltas ao modelo, ferramentas usadas e tokens.
+    trace.steps = 0; trace.tools = []; trace.tokensIn = 0; trace.tokensOut = 0;
     const history = store.history(conversationId, HISTORY_TURNS);
     const messages = [];
     for (const t of history) {
@@ -374,6 +376,11 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
         tools,
         messages,
       });
+
+      trace.steps++;
+      trace.tokensIn += (response.usage?.input_tokens ?? 0) + (response.usage?.cache_read_input_tokens ?? 0) + (response.usage?.cache_creation_input_tokens ?? 0);
+      trace.tokensOut += response.usage?.output_tokens ?? 0;
+      for (const b of response.content) if (b.type === 'tool_use') trace.tools.push(b.name);
 
       const textOut = response.content
         .filter((b) => b.type === 'text')
@@ -428,8 +435,11 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
     async owner(text, { channel = 'text', documents: created = [], meta = {} } = {}) {
       const rules = getRules(store, config);
       try {
+        const t0 = Date.now();
         meta.model = await pickModel(text, 'owner');
-        return await run({
+        meta.routeMs = Date.now() - t0;
+        const reply = await run({
+          trace: meta,
           model: meta.model,
           system: ownerSystem(config, rules, loadKnowledge(config.knowledgeDir, store)),
           tools: ownerTools(),
@@ -442,6 +452,8 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
           // Os números do dia já vão no contexto: a pergunta mais comum dispensa uma ida e volta de ferramenta.
           context: `[Números das últimas 24 horas, já consultados agora: ${JSON.stringify(snapshot(store, config, days(1)))}. Para outros períodos ou detalhes, use as ferramentas.]`,
         });
+        meta.ms = Date.now() - t0;
+        return reply;
       } catch (e) {
         fail(e);
         return `Estou sem acesso ao meu raciocínio no momento, ${config.ownerTitle}. Tente de novo em instantes.`;

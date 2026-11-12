@@ -154,7 +154,12 @@ test('HTTP: token protege a API; webhook verifica; chat e eventos funcionam', as
     assert.equal(state.rules.threshold, 2000);
 
     const chat = await fetch(`${base}/api/chat`, { method: 'POST', headers: auth, body: JSON.stringify({ text: 'Olá', channel: 'voice' }) });
-    assert.deepEqual(await chat.json(), { reply: 'Às ordens.', documents: [], model: 'claude-sonnet-5-5' });
+    const chatBody = await chat.json();
+    assert.equal(chatBody.reply, 'Às ordens.');
+    assert.deepEqual(chatBody.documents, []);
+    assert.equal(chatBody.trace.model, 'claude-sonnet-5-5');
+    assert.equal(chatBody.trace.steps, 1);
+    assert.deepEqual(chatBody.trace.tools, []);
 
     const bad = await fetch(`${base}/api/events`, { method: 'POST', headers: auth, body: JSON.stringify({ type: 'hack' }) });
     assert.equal(bad.status, 400);
@@ -393,4 +398,22 @@ test('troca automática de modelo: simples no Sonnet, importante no Opus, falha 
   await f.brain.contact('queria entender melhor os planos e valores da plataforma de vocês', { contact: '5521999990000' });
   assert.equal(f.client.requests.length, 1);
   assert.equal(f.client.requests[0].model, 'claude-sonnet-5-5');
+});
+
+test('rastro do turno: ferramentas e voltas chegam ao app; estado traz o resumo do sistema', async () => {
+  const t = setup({ script: [use('get_business_snapshot', { period_days: 7 }), say('Semana tranquila.')] });
+  const { base, close } = await serve(t.app);
+  try {
+    const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+    const chat = await (await fetch(`${base}/api/chat`, { method: 'POST', headers: h, body: JSON.stringify({ text: 'como foi a semana?' }) })).json();
+    assert.deepEqual(chat.trace.tools, ['get_business_snapshot']);
+    assert.equal(chat.trace.steps, 2);
+    assert.ok(chat.trace.ms >= 0);
+    const state = await (await fetch(`${base}/api/state`, { headers: h })).json();
+    assert.equal(state.system.model, 'claude-sonnet-5-5');
+    assert.equal(state.system.smartModel, null, 'troca automática desligada nos testes');
+    assert.equal(state.system.voice, 'aparelho');
+  } finally {
+    await close();
+  }
 });

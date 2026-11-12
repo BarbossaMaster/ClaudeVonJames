@@ -167,7 +167,12 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
       const created = [];
       const meta = {};
       const reply = await brain.owner(text.slice(0, 4000), { channel, documents: created, meta });
-      res.json({ reply, documents: created, model: meta.model });
+      res.json({
+        reply,
+        documents: created,
+        model: meta.model,
+        trace: { model: meta.model, ms: meta.ms, routeMs: meta.routeMs, steps: meta.steps, tools: meta.tools, tokensIn: meta.tokensIn, tokensOut: meta.tokensOut },
+      });
     }),
   );
 
@@ -208,6 +213,15 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
       whatsappLive: whatsapp.live,
       voice: Boolean(speech?.canSpeak),
       voiceRate: config.voiceRate,
+      // Dados do "esqueleto" para o painel do app.
+      system: {
+        model: config.model,
+        smartModel: config.router ? config.smartModel : null,
+        voice: speech?.provider ?? 'aparelho',
+        uptimeS: Math.round(process.uptime()),
+        documents: documents ? documents.list(200).length : 0,
+        rules: getRules(store, config).instructions.length,
+      },
     });
   });
 
