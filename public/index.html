@@ -255,59 +255,183 @@
     return box;
   }
 
-  // ---------- Núcleo visual: anéis de luz que reagem ao estado ----------
+  // ---------- Núcleo visual: esfera holográfica de partículas que reage ao estado ----------
+  // Camadas concêntricas de pontos e traços giram em sentidos opostos, cercadas por arcos orbitais.
+  // Parado ele respira; ouvindo fica atento e verde; pensando acelera e puxa para o roxo; falando pulsa.
   const viz = $('viz'), g = viz.getContext('2d');
   const GREEN = [57, 255, 20], PURPLE = [176, 38, 255];
-  // alvo por estado: energia (deformação), velocidade, mistura de roxo, brilho
+  // alvo por estado: giro, energia (pulso da fala), roxo, brilho, núcleo, turbulência
   const TARGET = {
-    idle: { e: .05, v: .25, p: .12, a: .55 },
-    listening: { e: .16, v: .9, p: 0, a: 1 },
-    thinking: { e: .08, v: 1.6, p: 1, a: .9 },
-    speaking: { e: .24, v: 1.3, p: .3, a: 1 },
+    idle:      { spin: .10, energy: .015, purple: .22, glow: .62, core: .45, churn: .15 },
+    listening: { spin: .16, energy: .05,  purple: .04, glow: .95, core: .75, churn: .10 },
+    thinking:  { spin: .85, energy: .03,  purple: .92, glow: .90, core: 1.0, churn: 1.0 },
+    speaking:  { spin: .26, energy: .20,  purple: .10, glow: 1.0, core: 1.0, churn: .30 },
   };
   const cur = { ...TARGET.idle };
-  let phase = 0, lastT = 0;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let rnd = 7; const rand = () => (rnd = (rnd * 16807) % 2147483647) / 2147483647; // sempre o mesmo desenho
+
+  // Três cascas: a de fora mais densa, as de dentro girando ao contrário.
+  const SHELLS = [{ r: 1, dir: 1 }, { r: .76, dir: -1.6 }, { r: .52, dir: 2.4 }];
+  const pts = [];
+  [560, 280, 150].forEach((n, shell) => {
+    for (let i = 0; i < n; i++) {
+      const y = 1 - (2 * (i + .5)) / n, phi = i * 2.399963 + shell;
+      pts.push({
+        shell, y, phi, rad: Math.sqrt(1 - y * y),
+        jit: 1 + (rand() - .5) * .07, seed: rand() * 6.283,
+        streak: rand() < .42 ? .05 + rand() * .26 : 0, // traço ao longo da latitude, como um fragmento de dado
+        alt: rand() < .3,                               // parte dos pontos usa a cor secundária
+        size: .6 + rand() * 1.1,
+      });
+    }
+  });
+  // Arcos orbitais: anéis incompletos em inclinações diferentes.
+  const arcs = Array.from({ length: 7 }, (_, i) => ({
+    tiltX: (rand() - .5) * 2.2, tiltZ: (rand() - .5) * 2.2, r: 1.05 + rand() * .14,
+    speed: (rand() < .5 ? -1 : 1) * (.25 + rand() * .7), alt: i % 3 === 1,
+    segs: Array.from({ length: 2 + Math.floor(rand() * 3) }, () => [rand() * 6.283, .35 + rand() * 1.3]),
+  }));
+
+  let W = 0, H = 0, T = 0, lastT = 0, rotY = 0, shellRot = [0, 0, 0], arcRot = arcs.map(() => 0), mouth = 0;
   function fit() {
-    const r = viz.getBoundingClientRect(), d = Math.min(devicePixelRatio || 1, 3);
-    viz.width = Math.round(r.width * d); viz.height = Math.round(r.height * d);
+    const r = viz.getBoundingClientRect(), d = Math.min(devicePixelRatio || 1, 2);
+    viz.width = W = Math.round(r.width * d); viz.height = H = Math.round(r.height * d);
   }
   const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
   const mix = (a, b, t) => a.map((x, i) => Math.round(x + (b[i] - x) * t));
-  function ring(cx, cy, R, seed, color, alpha, width, blur) {
-    g.beginPath();
-    const N = 140;
-    for (let i = 0; i <= N; i++) {
-      const th = (i / N) * Math.PI * 2;
-      const n = Math.sin(th * 3 + phase * 1.1 + seed) * .5 + Math.sin(th * 5 - phase * .8 + seed * 2.3) * .3 + Math.sin(th * 2 + phase * .5 + seed * 4.1) * .2;
-      const r = R * (1 + cur.e * n);
-      const x = cx + Math.cos(th) * r, y = cy + Math.sin(th) * r;
-      i ? g.lineTo(x, y) : g.moveTo(x, y);
-    }
-    g.closePath();
-    g.strokeStyle = rgba(color, alpha); g.lineWidth = width;
-    g.shadowColor = rgba(color, 1); g.shadowBlur = blur;
-    g.stroke();
+
+  // Ponto da esfera (latitude y, longitude phi, raio r) -> tela, com inclinação e perspectiva.
+  const TILT = .42, cosT = Math.cos(TILT), sinT = Math.sin(TILT);
+  function project(x, y, z, R, cx, cy) {
+    const y2 = y * cosT - z * sinT, z2 = y * sinT + z * cosT;
+    const k = 3.2 / (3.2 - z2);
+    return [cx + x * R * k, cy + y2 * R * k, z2];
   }
+
   function draw(t) {
     const dt = Math.min(.05, (t - lastT) / 1000 || 0); lastT = t;
-    const T = TARGET[state] || TARGET.idle, k = Math.min(1, dt * 5);
-    for (const key in cur) cur[key] += (T[key] - cur[key]) * (still ? 1 : k);
-    phase += dt * cur.v * 2;
-    const w = viz.width, h = viz.height, cx = w / 2, cy = h / 2, R = Math.min(w, h) * .3, u = w / 320;
-    g.clearRect(0, 0, w, h);
+    const tg = TARGET[orb.dataset.state] || TARGET.idle, ease = still ? 1 : Math.min(1, dt * 4);
+    for (const k in cur) cur[k] += (tg[k] - cur[k]) * ease;
+    T += dt;
+    rotY += dt * cur.spin;
+    SHELLS.forEach((sh, i) => (shellRot[i] += dt * sh.dir * (.05 + cur.churn * .9)));
+    arcs.forEach((a, i) => (arcRot[i] += dt * a.speed * (.35 + cur.churn * 1.6 + cur.energy * 2)));
+    // Envelope de fala: soma de ondas em ritmos diferentes, com cara de sílabas.
+    const syll = Math.abs(Math.sin(T * 9.1)) * .5 + Math.abs(Math.sin(T * 5.3 + 1)) * .3 + Math.abs(Math.sin(T * 14.7 + 2)) * .2;
+    mouth += ((cur.energy > .1 ? syll : .35 + .25 * Math.sin(T * 1.3)) - mouth) * Math.min(1, dt * 14);
+    const pulse = cur.energy * mouth;
+
+    const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .285, u = W / 320;
+    g.clearRect(0, 0, W, H);
     g.globalCompositeOperation = 'lighter';
-    const main = mix(GREEN, PURPLE, cur.p), second = mix(PURPLE, GREEN, cur.p);
-    // halo suave atrás
-    const halo = g.createRadialGradient(cx, cy, R * .2, cx, cy, R * 1.55);
-    halo.addColorStop(0, rgba(main, .10 * cur.a)); halo.addColorStop(.6, rgba(main, .05 * cur.a)); halo.addColorStop(1, rgba(main, 0));
-    g.shadowBlur = 0; g.fillStyle = halo; g.fillRect(0, 0, w, h);
-    // anéis: um brilho largo, um traço fino e nítido, e ecos discretos
-    ring(cx, cy, R, 0, main, .35 * cur.a, 6 * u, 40 * u);
-    ring(cx, cy, R, 0, main, .95 * cur.a, 1.4 * u, 14 * u);
-    ring(cx, cy, R * 1.03, 1.7, second, .9 * cur.a, 1.2 * u, 22 * u);
-    ring(cx, cy, R * .97, 3.9, main, .28 * cur.a, .8 * u, 8 * u);
-    ring(cx, cy, R * 1.06, 5.2, second, .4 * cur.a, .7 * u, 10 * u);
+    const main = mix(GREEN, PURPLE, cur.purple), second = mix(PURPLE, GREEN, cur.purple);
+
+    // brilho de fundo e núcleo
+    const halo = g.createRadialGradient(cx, cy, 0, cx, cy, R * 1.7);
+    halo.addColorStop(0, rgba(main, (.16 + pulse * .5) * cur.glow));
+    halo.addColorStop(.45, rgba(main, .05 * cur.glow));
+    halo.addColorStop(1, rgba(main, 0));
+    g.fillStyle = halo; g.fillRect(0, 0, W, H);
+    const cr = R * (.16 + cur.core * .1 + pulse * .5);
+    const core = g.createRadialGradient(cx, cy, 0, cx, cy, cr);
+    core.addColorStop(0, rgba([235, 255, 235], .75 * cur.core * cur.glow));
+    core.addColorStop(.35, rgba(second, .45 * cur.core * cur.glow));
+    core.addColorStop(1, rgba(second, 0));
+    g.fillStyle = core; g.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
+
+    // grade tênue da esfera: paralelos e meridianos dão volume
+    g.beginPath();
+    const gridRot = rotY + shellRot[0];
+    for (let k = -2; k <= 2; k++) {
+      const gy = k * .36, gr = Math.sqrt(1 - gy * gy);
+      for (let j = 0; j <= 48; j++) {
+        const th = (j / 48) * 6.2832;
+        const [px, py] = project(Math.cos(th) * gr, gy, Math.sin(th) * gr, R, cx, cy);
+        j ? g.lineTo(px, py) : g.moveTo(px, py);
+      }
+    }
+    for (let k = 0; k < 6; k++) {
+      const ph = gridRot + (k / 6) * 3.1416;
+      for (let j = 0; j <= 48; j++) {
+        const th = (j / 48) * 6.2832, rr = Math.sin(th);
+        const [px, py] = project(Math.cos(ph) * rr, Math.cos(th), Math.sin(ph) * rr, R, cx, cy);
+        j ? g.lineTo(px, py) : g.moveTo(px, py);
+      }
+    }
+    g.strokeStyle = rgba(main, .09 * cur.glow); g.lineWidth = .7 * u; g.stroke();
+
+    // espiral do núcleo: dois braços que giram, mais rápido quando ele pensa
+    const spin = T * (.6 + cur.churn * 3.2);
+    for (let arm = 0; arm < 2; arm++) {
+      g.beginPath();
+      for (let j = 0; j <= 40; j++) {
+        const f = j / 40, th = spin + arm * 3.1416 + f * 5.2, rr = f * (.36 + pulse * .9);
+        const [px, py] = project(Math.cos(th) * rr, (f - .5) * .12, Math.sin(th) * rr, R, cx, cy);
+        j ? g.lineTo(px, py) : g.moveTo(px, py);
+      }
+      g.strokeStyle = rgba(arm ? main : second, .5 * cur.core * cur.glow); g.lineWidth = 1.3 * u; g.stroke();
+    }
+
+    // partículas e traços, agrupados por cor e profundidade para desenhar rápido
+    const dots = {}, lines = {};
+    for (const p of pts) {
+      const sh = SHELLS[p.shell];
+      const wob = Math.sin(p.seed + T * (1.2 + cur.churn * 3)) * (.012 + cur.churn * .035);
+      const wave = Math.sin(p.y * 5 - T * 7 + p.shell) * pulse * 1.25;
+      const r = sh.r * p.jit * (1 + wob + wave + pulse * .35);
+      const phi = p.phi + rotY + shellRot[p.shell];
+      const [x, y, z] = project(Math.cos(phi) * p.rad * r, p.y * r, Math.sin(phi) * p.rad * r, R, cx, cy);
+      const depth = (z / sh.r + 1) / 2;                       // 0 atrás, 1 na frente
+      const a = Math.min(3, Math.floor(depth * 4));
+      const key = (p.alt ? 's' : 'm') + a;
+      if (p.streak) {
+        const phi2 = phi + p.streak * (1 + pulse * 2);
+        const [x2, y2] = project(Math.cos(phi2) * p.rad * r, p.y * r, Math.sin(phi2) * p.rad * r, R, cx, cy);
+        (lines[key] ||= []).push(x, y, x2, y2);
+      } else {
+        const sz = p.size * u * (.7 + depth * .9);
+        (dots[key] ||= []).push(x - sz / 2, y - sz / 2, sz);
+      }
+    }
+    const alphaOf = (key) => (.2 + .27 * Number(key[1])) * cur.glow;
+    for (const key in dots) {
+      g.fillStyle = rgba(key[0] === 's' ? second : main, alphaOf(key));
+      g.beginPath();
+      const d = dots[key];
+      for (let i = 0; i < d.length; i += 3) g.rect(d[i], d[i + 1], d[i + 2], d[i + 2]);
+      g.fill();
+    }
+    g.lineCap = 'round';
+    for (const key in lines) {
+      g.strokeStyle = rgba(key[0] === 's' ? second : main, alphaOf(key) * .9);
+      g.lineWidth = (.7 + Number(key[1]) * .22) * u;
+      g.beginPath();
+      const d = lines[key];
+      for (let i = 0; i < d.length; i += 4) { g.moveTo(d[i], d[i + 1]); g.lineTo(d[i + 2], d[i + 3]); }
+      g.stroke();
+    }
+
+    // arcos orbitais: um traço largo e fraco por baixo dá o brilho, um fino por cima dá a nitidez
+    arcs.forEach((a, i) => {
+      const cxr = Math.cos(a.tiltX), sxr = Math.sin(a.tiltX), czr = Math.cos(a.tiltZ), szr = Math.sin(a.tiltZ);
+      const col = a.alt ? second : main, rr = a.r * (1 + pulse * .5);
+      g.beginPath();
+      for (const [start, len] of a.segs) {
+        for (let j = 0; j <= 26; j++) {
+          const th = start + arcRot[i] + (len * j) / 26;
+          let x = Math.cos(th) * rr, y = 0, z = Math.sin(th) * rr;
+          const y1 = y * cxr - z * sxr, z1 = y * sxr + z * cxr;          // inclina em X
+          const x2 = x * czr - y1 * szr, y2 = x * szr + y1 * czr;        // inclina em Z
+          const xr = x2 * Math.cos(rotY * .5) - z1 * Math.sin(rotY * .5), zr = x2 * Math.sin(rotY * .5) + z1 * Math.cos(rotY * .5);
+          const [px, py] = project(xr, y2, zr, R, cx, cy);
+          j ? g.lineTo(px, py) : g.moveTo(px, py);
+        }
+      }
+      g.strokeStyle = rgba(col, .10 * cur.glow); g.lineWidth = 5 * u; g.stroke();
+      g.strokeStyle = rgba(col, .62 * cur.glow); g.lineWidth = 1.1 * u; g.stroke();
+    });
+
     g.globalCompositeOperation = 'source-over';
     if (!still) requestAnimationFrame(draw);
   }
