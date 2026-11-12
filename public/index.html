@@ -272,7 +272,7 @@
   let rnd = 7; const rand = () => (rnd = (rnd * 16807) % 2147483647) / 2147483647; // sempre o mesmo desenho
 
   // Três cascas: a de fora mais densa, as de dentro girando ao contrário.
-  const SHELLS = [{ r: 1, dir: 1 }, { r: .76, dir: -1.6 }, { r: .52, dir: 2.4 }];
+  const SHELLS = [{ r: 1, dir: 1 }, { r: .76, dir: -.75 }, { r: .52, dir: .6 }]; // as de dentro giram mais devagar
   const pts = [];
   [560, 280, 150].forEach((n, shell) => {
     for (let i = 0; i < n; i++) {
@@ -281,8 +281,8 @@
         shell, y, phi, rad: Math.sqrt(1 - y * y),
         jit: 1 + (rand() - .5) * .07, seed: rand() * 6.283,
         streak: rand() < .42 ? .05 + rand() * .26 : 0, // traço ao longo da latitude, como um fragmento de dado
-        drift: (rand() - .5) * .16,                     // cada partícula deriva no seu ritmo
-        tw: .3 + rand() * .85,                          // ritmo do cintilar
+        drift: (rand() - .5) * .16 * [1, .5, .3][shell],                     // cada partícula deriva no seu ritmo
+        tw: (.3 + rand() * .85) * [1, .7, .5][shell],                          // ritmo do cintilar
         alt: rand() < .3,                               // parte dos pontos usa a cor secundária
         size: .6 + rand() * 1.1,
       });
@@ -319,7 +319,7 @@
     rotY += dt * cur.spin;
     SHELLS.forEach((sh, i) => (shellRot[i] += dt * sh.dir * (.025 + cur.churn * .7)));
     arcs.forEach((a, i) => (arcRot[i] += dt * a.speed * (.22 + cur.churn * 1.2)));
-    spiralRot += dt * (.25 + cur.churn * 2.2);
+    spiralRot += dt * (.1 + cur.churn * 1.3);
     // Boca: segue o volume real do áudio que está tocando. Sem esse dado (voz do aparelho),
     // usa um ritmo simulado de sílabas. Sobe rápido e desce devagar, como uma voz.
     let level = 0;
