@@ -163,12 +163,15 @@
   @keyframes hudin { from { opacity: 0; transform: translateY(6px); letter-spacing: .3em; } }
   @media (prefers-reduced-motion: reduce) { #hudlog div { animation: none; } }
   body.hud-off .hud-row, body.hud-off #wave, body.hud-off #hudlog { display: none; }
-  #hudbtn[aria-pressed="true"] { color: var(--green); }
+  #hudbtn[aria-pressed="true"], #chatbtn[aria-pressed="true"] { color: var(--green); }
+  /* Chat escondido: some a conversa escrita e o núcleo ocupa a tela inteira. */
+  body.chat-off .talk { display: none; }
+  body.chat-off .stage { display: flex; }
   .hud-row, #wave, #status, #hudlog, .core { flex: none; }
   #hudlog div { flex: none; }
   /* Celular: o painel ocupa espaço, então os números do dia encolhem e a página pode rolar em vez de sobrepor. */
   @media (max-width: 899px) {
-    .actions { gap: 10px; font-size: 12px; }
+    .actions { gap: 9px; font-size: 12px; }
     .brand h1 { display: none; } /* no celular fica só o logo, para caber */
     .mark { width: 28px; height: 28px; } .mark img { width: 18px; }
     .actions { gap: 8px; }
@@ -222,6 +225,7 @@
   <div class="brand"><span class="mark"><img src="logo.png" alt=""></span><h1 id="name"><span class="long">Guardião da </span><span id="brandname">marca</span></h1></div>
   <div class="actions">
     <button class="toggle" id="handsfree" aria-pressed="false" title="Conversa sem tocar: ele ouve o tempo todo e responde quando você fala com ele"><span class="sw"></span>Conversa</button>
+    <button id="chatbtn" aria-pressed="false" title="Mostrar ou esconder a conversa escrita (também por voz: 'mostra o chat', 'esconde o chat')">Chat</button>
     <button id="hudbtn" aria-pressed="true" title="Mostrar ou minimizar a telemetria (também por voz: 'liga o painel', 'minimiza o painel')">HUD</button>
     <button id="voicebtn" hidden title="Ensinar o assistente a reconhecer a sua voz">Voz</button>
     <button id="docsbtn" title="Documentos gerados">Docs</button>
@@ -458,6 +462,14 @@
     })(start);
   }
 
+  let chatOn = mem.get('jarvis_chat') === 'on'; // escondido por padrão
+  function setChat(on) {
+    chatOn = on; mem.set('jarvis_chat', on ? 'on' : 'off');
+    document.body.classList.toggle('chat-off', !on);
+    $('chatbtn').setAttribute('aria-pressed', String(on));
+    requestAnimationFrame(fit);
+    if (on) setTimeout(() => $('text').focus(), 50);
+  }
   function setHud(on) {
     hudOn = on; mem.set('jarvis_hud', on ? 'on' : 'off');
     document.body.classList.toggle('hud-off', !on);
@@ -550,7 +562,8 @@
   // Camadas concêntricas de pontos e traços giram em sentidos opostos, cercadas por arcos orbitais.
   // Parado ele respira; ouvindo acende; pensando as camadas giram e clareiam; falando pulsa no volume real da voz.
   const viz = $('viz'), g = viz.getContext('2d');
-  const GOLD = [227, 188, 105], WHITE = [255, 245, 222];
+  // Âmbar profundo, com realces em laranja claro (nomes mantidos do tema anterior).
+  const GOLD = [236, 124, 18], WHITE = [255, 190, 84];
   // alvo por estado: giro, energia (quanto a fala move a esfera), branco, brilho, núcleo, agitação
   const TARGET = {
     idle:      { spin: .045, energy: 0,   white: 0,   glow: .78, core: .40, churn: .06 },
@@ -673,7 +686,7 @@
     g.globalCompositeOperation = 'destination-out';
     g.fillStyle = `rgba(0,0,0,${fade})`; g.fillRect(0, 0, W, H);
     g.globalCompositeOperation = 'lighter';
-    g.globalAlpha = still ? 1 : Math.min(1, fade * 1.55);
+    g.globalAlpha = still ? 1 : Math.min(1, fade * 1.2);
     const main = mix(GOLD, WHITE, cur.white), second = mix(WHITE, GOLD, .22);
 
     // brilho de fundo e núcleo
@@ -684,7 +697,7 @@
     g.fillStyle = halo; g.fillRect(0, 0, W, H);
     const cr = R * (.16 + cur.core * .1 + pulse * .5 + beat * .07);
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, cr);
-    core.addColorStop(0, rgba([255, 251, 240], .8 * cur.core * cur.glow));
+    core.addColorStop(0, rgba([255, 205, 130], .6 * cur.core * cur.glow));
     core.addColorStop(.35, rgba(second, .45 * cur.core * cur.glow));
     core.addColorStop(1, rgba(second, 0));
     g.fillStyle = core; g.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
@@ -756,7 +769,7 @@
       }
     }
     const tint = (key) => (key[0] === 'w' ? WHITE : key[0] === 's' ? second : main);
-    const alphaOf = (key) => Math.min(1, (.17 + .125 * Number(key[1])) * cur.glow);
+    const alphaOf = (key) => Math.min(1, (.13 + .105 * Number(key[1])) * cur.glow);
     for (const key in dots) {
       g.fillStyle = rgba(tint(key), alphaOf(key));
       g.beginPath();
@@ -899,7 +912,17 @@
     if (unlocked || !synth) return; unlocked = true;
     const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u);
   };
-  const unlockAll = () => { armed = true; unlock(); unlockPlayer(); };
+  const unlockAll = () => {
+    armed = true;
+    if (!desk.matches) unlock();   // a voz do sistema só precisa ser liberada em celular
+    unlockPlayer();
+  };
+  // Primeira interação com a página (o clique de entrar, por exemplo): libera o som já aqui,
+  // para o clique de falar ficar só com o microfone.
+  let primed = false;
+  const prime = () => { if (primed) return; primed = true; armed = true; unlockPlayer(); };
+  addEventListener('pointerdown', prime, { capture: true, once: true });
+  addEventListener('keydown', prime, { capture: true, once: true });
   // Voz natural vinda do servidor. Um único elemento de áudio, liberado no primeiro toque,
   // porque o iPhone só deixa tocar som que começou num gesto do usuário.
   const player = new Audio();
@@ -1160,6 +1183,7 @@
       if (!failed && !handsFree) hud('silêncio · escuta encerrada');
       if (state === 'listening') setState('idle');
       // O iPhone às vezes recusa o microfone logo depois de tocar áudio; tenta de novo sozinho.
+      if (failed) hud(`escuta falhou · <b>${esc(failed)}</b>`);
       if (/aborted|audio-capture|network/.test(failed) && retries < 2) { retries++; return setTimeout(startListening, 450); }
       retries = 0;
       if (handsFree) setTimeout(startListening, 350);
@@ -1206,7 +1230,7 @@
     r.onaudiostart = () => dbg('escuta: microfone abriu');
     r.onspeechstart = () => dbg('escuta: detectou voz');
     dbg('escuta: iniciando');
-    try { r.start(); stopSoon(NO_SPEECH_MS); } catch { failed = 'aborted'; finish(); }
+    try { r.start(); stopSoon(NO_SPEECH_MS); } catch (x) { failed = 'aborted (' + ((x && x.name) || 'erro') + ')'; finish(); }
   }
   function stopListening() { if (serverListen) return micEnd(); if (rec && rec.stopNow) rec.stopNow(); }
 
@@ -1221,6 +1245,22 @@
   }
 
   async function send(text, channel) {
+    const chatCmd = (() => {
+      const t = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (t.split(/\s+/).length > 8 || !/\b(chat|conversa escrita|texto)\b/.test(t)) return null;
+      if (/\b(escond|ocult|fech|tir|deslig|minimiz)/.test(t)) return false;
+      if (/\b(mostr|abr|lig|exib|volt)/.test(t)) return true;
+      return null;
+    })();
+    if (chatCmd !== null) {
+      setChat(chatCmd); hud(chatCmd ? 'chat visível' : 'chat escondido');
+      const msg = chatCmd ? 'Chat visível.' : 'Chat escondido.';
+      showReply(msg);
+      if (channel === 'voice') { setState('speaking'); await speak(msg); }
+      if (state === 'thinking' || state === 'speaking') setState('idle');
+      if (handsFree && !listening) setTimeout(startListening, 300);
+      return;
+    }
     const cmd = hudCommand(text);
     if (cmd !== null) {
       // Comando do painel: resolvido aqui mesmo, sem ir ao servidor.
@@ -1315,7 +1355,7 @@
   $('textform').addEventListener('submit', (e) => {
     e.preventDefault();
     const t = $('text').value.trim(); if (!t || state === 'thinking') return;
-    $('text').value = ''; send(t, 'text');
+    $('text').value = ''; send(t, 'voice'); // mesmo escrevendo, ele responde falando
   });
   // Teclado: espaço fala/para (como tocar no anel), Esc interrompe a fala,
   // e começar a digitar em qualquer lugar leva o texto para o campo de mensagem.
@@ -1441,6 +1481,7 @@
     } catch (x) { err.textContent = (x && x.message) || 'erro'; }
   });
 
+  $('chatbtn').addEventListener('click', () => { setChat(!chatOn); hud(chatOn ? 'chat visível' : 'chat escondido'); });
   $('hudbtn').addEventListener('click', () => { setHud(!hudOn); if (hudOn) hud('painel ativado'); });
   // Cadastro de voz: três amostras de oito segundos dão um reconhecimento estável.
   function voiceStatus(st) {
@@ -1543,7 +1584,7 @@
   $('login').addEventListener('cancel', (e) => e.preventDefault());
 
   setState('idle');
-  setHud(hudOn); renderSys(); setInterval(renderClock, 1000);
+  setHud(hudOn); setChat(chatOn); renderSys(); setInterval(renderClock, 1000);
   if (token) refresh(); else askToken('');
   setInterval(() => token && document.visibilityState === 'visible' && refresh(), 60000);
 })();
