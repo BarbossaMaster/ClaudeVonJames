@@ -55,6 +55,9 @@
 
   main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 300px; }
   .core { width: min(78vw, 320px); aspect-ratio: 1; border-radius: 50%; padding: 0; display: block; }
+  .core { position: relative; }
+  .core::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: #F0844A; mix-blend-mode: multiply; pointer-events: none; }
+  .core::before { content: ""; position: absolute; inset: 14%; border-radius: 50%; z-index: 1; background: radial-gradient(circle, rgba(240, 132, 74, .13) 0%, rgba(240, 132, 74, .06) 45%, transparent 70%); mix-blend-mode: screen; pointer-events: none; }
   .core canvas { width: 100%; height: 100%; display: block; }
   #status { color: var(--muted); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; min-height: 1.4em; text-align: center; }
 
@@ -445,7 +448,7 @@
     const tx = cx < t.left ? t.left - 7 : cx > t.right ? t.right + 7 : Math.max(t.left + 8, Math.min(cx, t.right - 8));
     const ty = cy < t.top ? (cx >= t.left && cx <= t.right ? t.top - 4 : (t.top + t.bottom) / 2) : cy > t.bottom ? (cx >= t.left && cx <= t.right ? t.bottom + 4 : (t.top + t.bottom) / 2) : (t.top + t.bottom) / 2;
     const d = Math.hypot(tx - cx, ty - cy) || 1, ux = (tx - cx) / d, uy = (ty - cy) / d;
-    const r0 = o.width * .27, sx = cx + ux * r0, sy = cy + uy * r0;  // nasce na superfície da esfera
+    const r0 = o.width * .25, sx = cx + ux * r0, sy = cy + uy * r0;  // nasce na superfície da esfera
     const line = $('beam-line'), dot = $('beam-dot');
     line.setAttribute('x1', sx); line.setAttribute('y1', sy);
     const GROW = 420, HOLD = 950, FADE = 450, start = performance.now();
@@ -563,8 +566,8 @@
   // Parado ele respira; ouvindo acende; pensando as camadas giram e clareiam; falando pulsa no volume real da voz.
   const viz = $('viz'), g = viz.getContext('2d');
   // Âmbar profundo, com realces em laranja claro (nomes mantidos do tema anterior).
-  const GOLD = [238, 98, 12], WHITE = [255, 170, 60];
-  const NEON = [255, 206, 74]; // amarelo dos pontos que cintilam
+  const GOLD = [250, 196, 112], WHITE = [255, 226, 170];
+  const NEON = [255, 248, 214]; // amarelo dos pontos que cintilam
   // alvo por estado: giro, energia (quanto a fala move a esfera), branco, brilho, núcleo, agitação
   const TARGET = {
     idle:      { spin: .045, energy: 0,   white: 0,   glow: .78, core: .40, churn: .06 },
@@ -682,7 +685,7 @@
     const sweepSpeed = .16 + cur.churn * .55;
     sweep = (sweep + dt * sweepSpeed) % 2.4;                                 // posição da onda de luz, de baixo para cima
     const sweepY = 1.35 - sweep * 1.5;
-    const cx = W / 2, cy = H / 2 + Math.sin(T * .55) * H * .012, R = Math.min(W, H) * .255, u = W / 320;
+    const cx = W / 2, cy = H / 2 + Math.sin(T * .55) * H * .012, R = Math.min(W, H) * .235, u = W / 320;
     // Rastro de luz: em vez de apagar a tela a cada quadro, o desenho anterior esmaece aos poucos.
     // O que se move deixa um risco suave atrás de si, e o que está parado ganha um brilho mais cheio.
     const fade = still ? 1 : 1 - Math.exp(-dt * (8 + cur.energy * 40));
@@ -693,14 +696,14 @@
     const main = mix(GOLD, WHITE, cur.white), second = mix(WHITE, GOLD, .22);
 
     // brilho de fundo e núcleo
-    const halo = g.createRadialGradient(cx, cy, 0, cx, cy, R * 1.7);
-    halo.addColorStop(0, rgba(main, (.16 + pulse * 1.1) * cur.glow));
-    halo.addColorStop(.45, rgba(main, .05 * cur.glow));
+    const halo = g.createRadialGradient(cx, cy, 0, cx, cy, R * 1.3);
+    halo.addColorStop(0, rgba(main, (.11 + pulse * .7) * cur.glow));
+    halo.addColorStop(.45, rgba(main, .03 * cur.glow));
     halo.addColorStop(1, rgba(main, 0));
     g.fillStyle = halo; g.fillRect(0, 0, W, H);
     const cr = R * (.16 + cur.core * .1 + pulse * .5 + beat * .07);
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, cr);
-    core.addColorStop(0, rgba([255, 200, 100], Math.min(1, .6 * cur.core * lit)));
+    core.addColorStop(0, rgba([255, 240, 205], Math.min(1, .6 * cur.core * lit)));
     core.addColorStop(.35, rgba(second, .45 * cur.core * cur.glow));
     core.addColorStop(1, rgba(second, 0));
     g.fillStyle = core; g.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
@@ -773,8 +776,8 @@
     }
     const tint = (key) => (key[0] === 'w' ? NEON : key[0] === 's' ? second : main);
     // As partes que cintilam ganham um contorno de luz amarela, discreto.
-    const neon = (key) => { if (key[0] === 'w') { g.shadowColor = rgba(NEON, .7); g.shadowBlur = 3.5 * u; } else g.shadowBlur = 0; };
-    const alphaOf = (key) => Math.min(1, (.13 + .105 * Number(key[1])) * lit);
+    const neon = (key) => { if (key[0] === 'w') { g.shadowColor = rgba(NEON, .75); g.shadowBlur = 4 * u; } else g.shadowBlur = 0; };
+    const alphaOf = (key) => Math.min(1, (.16 + .12 * Number(key[1])) * lit); // um pouco mais forte: a lente escurece
     for (const key in dots) {
       neon(key);
       g.fillStyle = rgba(tint(key), alphaOf(key));
