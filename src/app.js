@@ -129,7 +129,9 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
   // Momento em que o assistente ficou online pela primeira vez; fica gravado e nunca mais muda.
   const bornAt = () => {
     let ts = store.get('bornAt', 0);
-    if (!ts) { ts = store.now(); store.set('bornAt', ts); }
+    // Se já existiam conversas antes de esta contagem nascer, vale a data da primeira delas.
+    const first = Math.min(ts || Infinity, store.earliest() ?? Infinity, store.now());
+    if (first !== ts) { ts = first; store.set('bornAt', ts); }
     return ts;
   };
   bornAt();

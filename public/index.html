@@ -92,10 +92,11 @@
   /* HUD: telemetria real em volta do núcleo. Some inteiro com body.hud-off. */
   .hud-row { width: 100%; max-width: 560px; display: flex; justify-content: space-between; gap: 12px; font: 10px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
   .hud-row > div:last-child { text-align: right; }
+  #hud-sys { position: relative; } /* o pulso fica pendurado à esquerda, fora do texto, para as duas linhas alinharem */
   .hud-row b { font-weight: 500; color: var(--green); }
   .hud-row i { font-style: normal; color: var(--text); }
   /* Pulso de conhecimento: bate devagar o tempo todo e dispara quando ele aprende algo. */
-  .kp { display: inline-block; position: relative; width: 6px; height: 6px; margin: 0 8px 1px 0; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: kp 3.4s ease-in-out infinite; }
+  .kp { display: block; width: 6px; height: 6px; position: absolute; left: -15px; top: 21px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: kp 3.4s ease-in-out infinite; }
   .kp::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid var(--green); opacity: 0; animation: kpring 3.4s ease-out infinite; }
   .kp.gain { animation-duration: .7s; background: var(--purple); box-shadow: 0 0 14px var(--purple); }
   .kp.gain::after { animation-duration: .7s; border-color: var(--purple); }

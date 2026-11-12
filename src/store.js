@@ -144,6 +144,12 @@ export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
       return db.prepare('SELECT * FROM documents ORDER BY ts DESC, rowid DESC LIMIT ?').all(limit);
     },
 
+    /** Data do registro mais antigo guardado (fala, evento ou documento), ou null se não há nenhum. */
+    earliest() {
+      const r = db.prepare('SELECT MIN(ts) AS ts FROM (SELECT MIN(ts) AS ts FROM turns UNION ALL SELECT MIN(ts) FROM events UNION ALL SELECT MIN(ts) FROM documents)').get();
+      return r?.ts ?? null;
+    },
+
     /** Quantas falas e quantos eventos estão guardados. */
     counts() {
       return {
