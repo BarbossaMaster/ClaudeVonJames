@@ -282,7 +282,7 @@
         jit: 1 + (rand() - .5) * .07, seed: rand() * 6.283,
         streak: rand() < .42 ? .05 + rand() * .26 : 0, // traço ao longo da latitude, como um fragmento de dado
         drift: (rand() - .5) * .16,                     // cada partícula deriva no seu ritmo
-        tw: .5 + rand() * 1.4,                          // ritmo do cintilar
+        tw: .3 + rand() * .85,                          // ritmo do cintilar
         alt: rand() < .3,                               // parte dos pontos usa a cor secundária
         size: .6 + rand() * 1.1,
       });
