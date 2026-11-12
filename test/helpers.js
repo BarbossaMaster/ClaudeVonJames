@@ -3,6 +3,7 @@ import { loadConfig } from '../src/config.js';
 import { createBrain } from '../src/brain.js';
 import { createApp, createJarvis } from '../src/app.js';
 import { createDocuments } from '../src/documents.js';
+import { createVoiceprints } from '../src/voiceprint.js';
 
 /** Cliente falso do Claude: devolve respostas roteirizadas e guarda as requisições. */
 export function fakeClaude(script) {
@@ -35,6 +36,7 @@ export function setup({ script = [], env = {}, speech } = {}) {
     OWNER_WHATSAPP: '+55 (11) 98888-7777',
     WHATSAPP_VERIFY_TOKEN: 'verifica',
     KNOWLEDGE_DIR: '/nonexistent',
+    JARVIS_SERVER_LISTEN: '1',
     JARVIS_ROUTER: 'off', // a troca automática de modelo é testada à parte
 
     ...env,
@@ -53,6 +55,8 @@ export function setup({ script = [], env = {}, speech } = {}) {
   const sp = speech ?? { enabled: false };
   const client = fakeClaude(script);
   const documents = createDocuments({ store, config, dir: ':memory:' });
+  // Modelo de voz falso: o 'vetor' é o primeiro valor do áudio repetido, o que basta para simular vozes diferentes.
+  const voiceprints = createVoiceprints({ store, config, embedder: (samples) => [Math.round(samples[0] * 10), 1, 0] });
   const links = {};
   const quiet = () => {};
   const brain = createBrain({
@@ -64,8 +68,8 @@ export function setup({ script = [], env = {}, speech } = {}) {
   });
   const jarvis = createJarvis({ store, config, whatsapp, speech: sp, brain, log: quiet });
   links.jarvis = jarvis;
-  const app = createApp({ store, config, whatsapp, speech: sp, brain, jarvis, documents, log: quiet });
-  return { config, store, sent, whatsapp, client, brain, jarvis, app, documents, advance: (ms) => (clock += ms) };
+  const app = createApp({ store, config, whatsapp, speech: sp, brain, jarvis, documents, voiceprints, log: quiet });
+  return { config, store, sent, whatsapp, client, brain, jarvis, app, documents, voiceprints, advance: (ms) => (clock += ms) };
 }
 
 export async function serve(app) {

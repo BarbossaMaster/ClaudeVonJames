@@ -6,6 +6,7 @@ import { createBrain } from './brain.js';
 import { createApp, createJarvis } from './app.js';
 import { startScheduler } from './briefing.js';
 import { createDocuments } from './documents.js';
+import { createVoiceprints } from './voiceprint.js';
 import { dirname, join } from 'node:path';
 
 const config = loadConfig();
@@ -21,6 +22,8 @@ const documents = createDocuments({
   config,
   dir: config.dbPath === ':memory:' ? ':memory:' : join(dirname(config.dbPath), 'docs'),
 });
+const voiceprints = createVoiceprints({ store, config });
+if (speech.enabled && config.serverListen) voiceprints.warm();
 const links = {};
 const brain = createBrain({
   store,
@@ -33,14 +36,14 @@ const brain = createBrain({
 const jarvis = createJarvis({ store, config, whatsapp, speech, brain });
 links.jarvis = jarvis;
 
-const app = createApp({ store, config, whatsapp, speech, brain, jarvis, documents });
+const app = createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints });
 startScheduler({ store, config, notifyOwner: jarvis.notifyOwner });
 
 app.listen(config.port, () => {
   console.log(`[jarvis] ${config.assistantName} no ar em http://localhost:${config.port}`);
   console.log(`[jarvis] WhatsApp: ${whatsapp.live ? 'conectado' : 'modo console (sem credenciais)'}`);
   console.log(`[jarvis] Voz: ${speech.canSpeak ? speech.provider : 'do navegador (sem ELEVENLABS_API_KEY/OPENAI_API_KEY)'}`);
-  console.log(`[jarvis] Áudios recebidos no WhatsApp: ${speech.enabled ? 'ligados' : 'desligados (sem OPENAI_API_KEY)'}`);
+  console.log(`[jarvis] Escuta (transcrição): ${speech.enabled ? speech.listener : 'do navegador (sem chave de transcrição)'}`);
   if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
     console.log('[jarvis] ATENÇÃO: sem ANTHROPIC_API_KEY o Jarvis registra eventos e manda resumos, mas não conversa.');
   }

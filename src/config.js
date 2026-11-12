@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { dirname, join } from 'node:path';
 
 const effort = (v, d) => (['low', 'medium', 'high', 'xhigh', 'max'].includes(String(v).toLowerCase()) ? String(v).toLowerCase() : d);
 const num = (v, d) => (v === undefined || v === '' || Number.isNaN(Number(v)) ? d : Number(v));
@@ -16,6 +17,13 @@ export function loadConfig(env = process.env) {
     ownerName: env.OWNER_NAME || 'o dono',
     ownerTitle: env.OWNER_TITLE || 'senhor',
     businessName: env.BUSINESS_NAME || 'o negócio',
+
+    // Escuta pelo servidor (o app grava, o servidor transcreve e reconhece a voz). Desligada por padrão:
+    // só liga com JARVIS_SERVER_LISTEN=1, porque ainda precisa de teste no aparelho real.
+    serverListen: /^(1|true|sim|on)$/i.test(env.JARVIS_SERVER_LISTEN || ''),
+    // Reconhecimento de voz por pessoa: arquivo do modelo e nota mínima (0 a 1) para aceitar a voz.
+    voiceprintModel: env.VOICEPRINT_MODEL || join(dirname(env.JARVIS_DB || 'data/jarvis.db'), 'models', 'voz.onnx'),
+    voiceprintThreshold: Math.min(.95, Math.max(.2, num(env.VOICEPRINT_THRESHOLD, 0.5))),
 
     // Cor de destaque dos PDFs (padrão: dourado da marca).
     pdfAccent: /^#[0-9a-f]{6}$/i.test(env.PDF_ACCENT || '') ? env.PDF_ACCENT : '#B08A3C',
@@ -63,6 +71,7 @@ export function loadConfig(env = process.env) {
       ttsVoice: env.TTS_VOICE || 'onyx',
       elevenKey: env.ELEVENLABS_API_KEY || '',
       elevenVoice: env.ELEVENLABS_VOICE_ID || '',
+      elevenSttModel: env.ELEVENLABS_STT_MODEL || 'scribe_v1',
       elevenModel: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5',
     },
   };

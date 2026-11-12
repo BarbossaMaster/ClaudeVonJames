@@ -120,10 +120,11 @@ export function createJarvis({ store, config, whatsapp, speech, brain, log = con
   return { notifyOwner, ingestEvent, handleWhatsApp, sendDocumentToOwner };
 }
 
-export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, log = console.error }) {
+export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, log = console.error }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => (req.rawBody = buf) }));
+  const wavBody = express.raw({ type: ['audio/wav', 'audio/x-wav', 'audio/wave'], limit: '12mb' });
 
   // Momento em que o assistente ficou online pela primeira vez; fica gravado e nunca mais muda.
   const bornAt = () => {
@@ -194,6 +195,44 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
     }),
   );
 
+  // Escuta do app: recebe a fala gravada (WAV), transcreve e diz de quem é a voz.
+  app.post(
+    '/api/listen',
+    auth,
+    wavBody,
+    wrap(async (req, res) => {
+      if (!Buffer.isBuffer(req.body) || req.body.length < 2000) return res.status(400).json({ error: 'envie um áudio WAV' });
+      if (!speech?.enabled) return res.status(503).json({ error: 'transcrição não configurada' });
+      const t0 = Date.now();
+      const [text, speaker] = await Promise.all([
+        speech.transcribe(req.body, 'audio/wav'),
+        voiceprints ? voiceprints.identify(req.body) : { enrolled: false, available: false, match: false },
+      ]);
+      res.json({ text, speaker, ms: Date.now() - t0 });
+    }),
+  );
+
+  // Impressão vocal: gravar amostras, consultar e apagar.
+  app.get('/api/voiceprint', auth, (_req, res) => res.json(voiceprints ? voiceprints.status() : { available: false, people: [] }));
+  app.post(
+    '/api/voiceprint',
+    auth,
+    wavBody,
+    wrap(async (req, res) => {
+      if (!voiceprints) return res.status(503).json({ error: 'reconhecimento de voz indisponível' });
+      if (!Buffer.isBuffer(req.body) || req.body.length < 2000) return res.status(400).json({ error: 'envie um áudio WAV' });
+      try {
+        res.status(201).json({ ...(await voiceprints.enroll(req.query.name, req.body)), ...voiceprints.status() });
+      } catch (e) {
+        res.status(422).json({ error: e.message });
+      }
+    }),
+  );
+  app.delete('/api/voiceprint', auth, (req, res) => {
+    voiceprints?.remove(req.query.name);
+    res.json(voiceprints ? voiceprints.status() : { available: false, people: [] });
+  });
+
   // Voz natural para o app: devolve MP3 da resposta.
   app.post(
     '/api/speak',
@@ -239,6 +278,9 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
         voice: speech?.provider ?? 'aparelho',
         uptimeS: Math.round(process.uptime()),
         bornAt: bornAt(),
+        // O app grava e o servidor transcreve quando há serviço de transcrição; senão usa o do navegador.
+        listen: Boolean(speech?.enabled) && config.serverListen,
+        voiceprint: voiceprints ? voiceprints.status() : { available: false, people: [] },
         ...knowledgeStats(),
         documents: documents ? documents.list(200).length : 0,
         rules: getRules(store, config).instructions.length,

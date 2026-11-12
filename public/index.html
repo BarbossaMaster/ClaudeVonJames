@@ -117,7 +117,8 @@
   #hudlog div { flex: none; }
   /* Celular: o painel ocupa espaço, então os números do dia encolhem e a página pode rolar em vez de sobrepor. */
   @media (max-width: 899px) {
-    .actions { gap: 12px; font-size: 12px; }
+    .actions { gap: 10px; font-size: 12px; }
+    .brand h1 { letter-spacing: .22em; }
     .toggle { white-space: nowrap; gap: 6px; }
     main { gap: 8px; flex: 1 0 auto; min-height: 0; padding: 10px 0 6px; }
     body:not(.hud-off) .stat { padding: 8px 0 7px; }
@@ -168,6 +169,7 @@
   <div class="actions">
     <button class="toggle" id="handsfree" aria-pressed="false" title="Conversa sem tocar: ele ouve o tempo todo e responde quando você fala com ele"><span class="sw"></span>Conversa</button>
     <button id="hudbtn" aria-pressed="true" title="Mostrar ou minimizar a telemetria (também por voz: 'liga o painel', 'minimiza o painel')">HUD</button>
+    <button id="voicebtn" title="Ensinar o assistente a reconhecer a sua voz">Voz</button>
     <button id="docsbtn" title="Documentos gerados">Docs</button>
     <button id="logout" title="Trocar token">Sair</button>
   </div>
@@ -198,6 +200,20 @@
 </form>
 </section>
 </div>
+
+<dialog id="voice">
+  <h2>Reconhecer voz</h2>
+  <p id="voicestatus">Carregando…</p>
+  <p>Para gravar, toque no botão e leia em voz normal, no lugar onde você costuma usar o app:</p>
+  <p style="color:var(--text)">“Bom dia. Quero saber como estão as vendas, quem precisa de retorno e o que ficou pendente. Depois me lembre dos compromissos da semana e do que eu preciso decidir.”</p>
+  <form class="bar" id="voiceform" autocomplete="off">
+    <input type="text" id="voicename" value="dono" aria-label="De quem é a voz" maxlength="40">
+    <button class="send" type="submit" aria-label="Gravar amostra" style="width:auto;padding:0 4px;font-size:13px" id="voicerec">Gravar</button>
+  </form>
+  <div class="err" id="voiceerr"></div>
+  <button class="close" id="voiceclear">Apagar vozes gravadas</button>
+  <button class="close" id="voiceclose" style="margin-left:18px">Fechar</button>
+</dialog>
 
 <dialog id="docs">
   <h2>Documentos</h2>
@@ -244,27 +260,19 @@
     while (el.childElementCount > (wide.matches ? 6 : 4)) el.firstElementChild.remove();
   }
   const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
-  // Nomes do próprio James em vez de termos técnicos: a mente ágil cuida do dia a dia,
-  // a mente profunda entra nos assuntos importantes.
-  const mindOf = (id) => (sys.smart && id === sys.smart ? 'profunda' : 'ágil');
-  function renderSys() {
-    const act = sys.active || sys.model;
-    const tag = (on, t) => (on ? `<b>${t}</b>` : `<span>${t}</span>`);
-    const mind = sys.smart ? `${tag(act === sys.model, 'ágil')} · ${tag(act === sys.smart, 'profunda')}` : '<b>ágil</b>';
-    const timbre = !sys.voice ? '—' : sys.voice === 'aparelho' ? 'nativo' : esc(assistant.toLowerCase());
-    $('hud-sys').innerHTML =
-      `mente <i>${mind}</i><br>timbre <i>${timbre}</i><br>sinal <i>${sys.link == null ? '—' : sys.link + ' ms'}</i><br>memórias <i id="k-mem">${sys.memorias ?? '—'}</i>`;
-  }
+  // Painel enxuto: duas linhas de cada lado. À esquerda, a vida dele; à direita, a hora e as memórias.
+  function renderSys() { renderClock(); }
   function renderClock() {
     if (!hudOn) return;
     const n = new Date();
-    const day = n.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' }).replace(/\./g, '');
-    // Tempo de vida: conta desde a primeira vez que ele ficou online, não desde que a página abriu.
+    // Tempo de vida em horas corridas, desde a primeira vez que ele ficou online.
     const up = sys.bornAt ? Math.max(0, Math.floor((Date.now() + sys.clockSkew - sys.bornAt) / 1000)) : 0;
-    const d = Math.floor(up / 86400);
-    const life = `${d ? d + 'd ' : ''}${pad(Math.floor(up / 3600) % 24)}:${pad(Math.floor(up / 60) % 60)}:${pad(up % 60)}`;
+    const life = `${pad(Math.floor(up / 3600))}:${pad(Math.floor(up / 60) % 60)}:${pad(up % 60)}`;
+    const gain = sys.gainUntil > Date.now();
+    $('hud-sys').innerHTML =
+      `desperto há <i>${sys.bornAt ? life : '—'}</i><br><span class="kp${gain ? ' gain' : ''}"></span>saberes <i class="${gain ? 'up' : ''}">${sys.saberes ?? '—'}</i>`;
     $('hud-clock').innerHTML =
-      `<i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i><br>${esc(day)}<br>desperto há <i>${sys.bornAt ? life : '—'}</i><br><span class="kp${sys.gainUntil > Date.now() ? ' gain' : ''}"></span>saberes <i id="k-sab" class="${sys.gainUntil > Date.now() ? 'up' : ''}">${sys.saberes ?? '—'}</i>`;
+      `<i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i><br>memórias <i>${sys.memorias ?? '—'}</i>`;
   }
   // Quando saberes ou memórias aumentam, o pulso dispara e o número sobe contando.
   function setKnowledge(saberes, memorias) {
@@ -298,10 +306,13 @@
   const talkOpen = () => Date.now() - lastReplyAt < TALK_WINDOW;
   let lastReplyAt = 0;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  // Quando o servidor transcreve, o app grava o microfone e percebe sozinho o começo e o fim da fala.
+  let serverListen = false, voicePeople = [];
+  const canHear = () => serverListen || !!SR;
 
   const setState = (s, label) => {
     state = s; orb.dataset.state = s;
-    statusEl.textContent = label ?? ({ idle: handsFree ? (!armed ? 'Toque uma vez para começar' : talkOpen() ? 'Pode falar' : `Diga "${assistant}"`) : !SR ? 'Escreva sua mensagem' : desk.matches ? 'Clique ou aperte espaço' : 'Toque para falar', listening: 'Ouvindo', thinking: 'Pensando', speaking: 'Falando' })[s];
+    statusEl.textContent = label ?? ({ idle: handsFree ? (!armed ? 'Toque uma vez para começar' : talkOpen() || (serverListen && voicePeople.length) ? 'Pode falar' : `Diga "${assistant}"`) : !canHear() ? 'Escreva sua mensagem' : desk.matches ? 'Clique ou aperte espaço' : 'Toque para falar', listening: 'Ouvindo', thinking: 'Pensando', speaking: 'Falando' })[s];
   };
   // No celular a tela mostra só a última resposta do assistente (e os PDFs dela).
   // No computador há espaço: a conversa inteira fica na coluna da direita, com as falas do usuário.
@@ -368,7 +379,7 @@
   // alvo por estado: giro, energia (quanto a fala move a esfera), branco, brilho, núcleo, agitação
   const TARGET = {
     idle:      { spin: .045, energy: 0,   white: 0,   glow: .78, core: .40, churn: .06 },
-    listening: { spin: .06,  energy: 0,   white: .12, glow: .95, core: .70, churn: .05 },
+    listening: { spin: .06,  energy: .14,  white: .12, glow: .95, core: .70, churn: .05 },
     thinking:  { spin: .13,  energy: 0,   white: .50, glow: .92, core: 1.0, churn: .22 },
     speaking:  { spin: .07,  energy: .24, white: .18, glow: 1.0, core: .90, churn: .10 },
   };
@@ -435,10 +446,12 @@
         if (speechEnv && !player.paused) v = speechEnv.data[Math.floor(player.currentTime / speechEnv.step) + Math.round((i - mid) * .9)] ?? 0;
         else v = mouth * (.4 + .6 * Math.abs(Math.sin(i * .7 + T * 5)));
       } else if (st === 'listening') {
-        v = .08 + (.1 + heardNow * .75) * Math.abs(Math.sin(i * .9 + T * 6) * Math.sin(i * .31 - T * 3.3));
+        const amp = serverListen ? micLevel : heardNow * .75;
+        v = .08 + (.1 + amp) * Math.abs(Math.sin(i * .9 + T * 6) * Math.sin(i * .31 - T * 3.3));
       } else if (st === 'thinking') {
         v = .08 + .3 * Math.pow(Math.max(0, Math.sin(i * .28 - T * 3.2)), 3);
       }
+      if (st === 'idle' && capture) v = .04 + micLevel * .5 * Math.abs(Math.sin(i * .9 + T * 4)); // à espera: mostra o som do ambiente
       bars[i] += (v - bars[i]) * .35;
       const edge = 1 - Math.pow(Math.abs(i - mid) / mid, 2.2);           // some nas pontas
       const bh = Math.max(1 * d, bars[i] * h * .92), bw = Math.max(1, w / BARS * .5);
@@ -459,6 +472,7 @@
     // Boca: segue o volume real do áudio que está tocando. Sem esse dado (voz do aparelho),
     // usa um ritmo simulado de sílabas. Sobe rápido e desce devagar, como uma voz.
     let level = 0;
+    if (orb.dataset.state === 'listening' && serverListen) level = micLevel; // a esfera acompanha a sua voz
     if (orb.dataset.state === 'speaking') {
       const real = speechLevel();
       level = real ?? Math.abs(Math.sin(T * 6.1)) * .5 + Math.abs(Math.sin(T * 3.7 + 1)) * .3 + Math.abs(Math.sin(T * 9.3 + 2)) * .2;
@@ -654,11 +668,13 @@
         const first = !sys.model;
         sys.model = s.system.model; sys.smart = s.system.smartModel || ''; sys.voice = s.system.voice;
         // O relógio de vida usa a hora do servidor, para não depender do relógio do aparelho.
+        serverListen = Boolean(s.system.listen) && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        voicePeople = (s.system.voiceprint && s.system.voiceprint.people) || [];
         sys.bornAt = s.system.bornAt || 0; sys.clockSkew = (s.now || Date.now()) - Date.now();
         if (first) {
           const up = Math.floor(((s.now || Date.now()) - sys.bornAt) / 86400000);
           hud(`<b>${esc(s.assistant || 'Jarvis')}</b> desperto${up > 0 ? ' · ' + up + (up > 1 ? ' dias' : ' dia') + ' de vida' : ''}`);
-          hud(`mente ${sys.smart ? 'ágil e profunda' : 'ágil'} · ${s.system.saberes} saberes`);
+          hud(`${s.system.saberes} saberes · ${s.system.memorias} memórias`);
           hud(`sinal estável · ${sys.link} ms`);
         }
         setKnowledge(s.system.saberes, s.system.memorias);
@@ -760,7 +776,7 @@
         u.lang = 'pt-BR'; if (voice) u.voice = voice; u.rate = 1.05; u.pitch = .9;
         u.onend = u.onerror = () => finish('voz do aparelho');
         dbg('fala: voz do aparelho');
-        hud('falando com o timbre nativo');
+        hud('falando');
         synth.speak(u);
         guard(4000 + text.length * 95);
       };
@@ -780,7 +796,7 @@
           player.onended = () => finish('áudio terminou');
           player.onerror = () => { dbg('fala: erro no player'); browser(); };
           dbg('fala: tocando áudio');
-          hud('dando voz à resposta');
+          hud('falando');
           player.onloadedmetadata = () => {
             if (Number.isFinite(player.duration)) guard((player.duration / voiceRate) * 1000 + 2500);
           };
@@ -796,12 +812,141 @@
     if (endSpeech) endSpeech();
   }
 
+  // ---------- Escuta pelo servidor: microfone aberto, detecção automática de fala ----------
+  const mic = { stream: null, ctx: null, proc: null };
+  const RATE = 16000, FRAME = 320;                 // quadros de 20 ms a 16 kHz
+  const END_SHORT_MS = 1800, END_LONG_MS = 2800;   // pausa que encerra uma fala curta / longa
+  const MAX_MS = 120000;                           // teto de uma fala: dois minutos
+  let capture = null, micLevel = 0;
+
+  async function micOpen() {
+    if (mic.stream) return;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+    const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(2048, 1, 1), mute = ctx.createGain();
+    mute.gain.value = 0; src.connect(proc); proc.connect(mute); mute.connect(ctx.destination); // precisa estar ligado para processar; sai mudo
+    proc.onaudioprocess = (e) => onMicAudio(e.inputBuffer.getChannelData(0), ctx.sampleRate);
+    Object.assign(mic, { stream, ctx, proc });
+  }
+  function micClose() {
+    try { if (mic.proc) mic.proc.onaudioprocess = null; if (mic.stream) mic.stream.getTracks().forEach((t) => t.stop()); if (mic.ctx) mic.ctx.close(); } catch {}
+    mic.stream = mic.ctx = mic.proc = null; micLevel = 0;
+  }
+  // Recebe o áudio cru, reduz para 16 kHz e passa quadro a quadro pelo detector de fala.
+  function onMicAudio(input, rate) {
+    const c = capture; if (!c) return;
+    const step = rate / RATE, n = Math.floor(input.length / step);
+    for (let i = 0; i < n; i++) {
+      const a = Math.floor(i * step), b = Math.max(a + 1, Math.floor((i + 1) * step));
+      let sum = 0; for (let k = a; k < b; k++) sum += input[k];
+      c.pending[c.fill++] = sum / (b - a);
+      if (c.fill === FRAME) { c.fill = 0; onFrame(c, c.pending.slice()); }
+    }
+  }
+  function onFrame(c, frame) {
+    let e = 0; for (let i = 0; i < FRAME; i++) e += frame[i] * frame[i];
+    const rms = Math.sqrt(e / FRAME), now = performance.now();
+    micLevel += (Math.min(1, rms * 14) - micLevel) * .35;
+    if (c.fixedMs) { // gravação de amostra de voz: tempo fixo, sem detector
+      c.frames.push(frame);
+      if (now - c.started >= c.fixedMs) micEnd();
+      return;
+    }
+    // Piso de ruído do ambiente: desce rápido, sobe devagar. Fala é o que passa bem acima dele.
+    c.floor = c.floor == null ? rms : c.floor + (rms - c.floor) * (rms < c.floor ? .3 : .004);
+    const voiced = rms > Math.max(.008, c.floor * 3);
+    if (!c.recording) {
+      c.pre.push(frame); if (c.pre.length > 25) c.pre.shift();               // meio segundo de folga antes da fala
+      c.run = voiced ? c.run + 1 : Math.max(0, c.run - 1);
+      if (c.run >= 5) {                                                      // 100 ms de voz seguida: começou
+        c.recording = true; c.frames = c.pre.slice(); c.voiced = c.run; c.lastVoice = now; c.began = now;
+        hud('sua voz chegou'); setState('listening');
+      } else if (c.oneShot && now - c.started > 8000) micEnd();              // tocou e não falou
+      return;
+    }
+    c.frames.push(frame);
+    if (voiced) { c.voiced++; c.lastVoice = now; }
+    const endMs = c.voiced * 20 < 2500 ? END_SHORT_MS : END_LONG_MS;
+    if (now - c.lastVoice > endMs || now - c.began > MAX_MS) micEnd();
+  }
+  // Abre o microfone e fica à espera de fala. oneShot: veio de um toque (ouve uma fala e fecha).
+  async function micListen(oneShot) {
+    if (listening || state === 'thinking' || state === 'speaking') return;
+    listening = true;
+    try { await micOpen(); } catch (e) {
+      listening = false; setHandsFree(false, false); hud('microfone bloqueado');
+      return setState('idle', 'Permita o microfone');
+    }
+    capture = { oneShot, started: performance.now(), pending: new Float32Array(FRAME), fill: 0, pre: [], frames: [], run: 0, voiced: 0, floor: null, recording: false };
+    if (oneShot) { setState('listening'); hud('ouvindo'); } else setState('idle');
+  }
+  // Encerra a captura. Se havia fala gravada, manda para o servidor; senão, só fecha.
+  function micEnd() {
+    const c = capture; if (!c) return;
+    capture = null; micClose(); listening = false;
+    if (c.fixedMs) return c.done(wavOf(c.frames));
+    if (!c.recording || c.voiced * 20 < 300) {                               // nada, ou só um estalo
+      if (state === 'listening') setState('idle');
+      if (handsFree) setTimeout(startListening, 200);
+      return;
+    }
+    hearAudio(wavOf(c.frames), c);
+  }
+  function wavOf(frames) {
+    const n = frames.length * FRAME, v = new DataView(new ArrayBuffer(44 + n * 2));
+    const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, RATE, true); v.setUint32(28, RATE * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, n * 2, true);
+    let o = 44;
+    for (const f of frames) for (let i = 0; i < FRAME; i++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, f[i])) * 32767, true);
+    return new Blob([v], { type: 'audio/wav' });
+  }
+  const postWav = (path, blob) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'audio/wav', Authorization: 'Bearer ' + token }, body: blob });
+  // Manda a fala para transcrição e reconhecimento de voz, e decide se é para responder.
+  async function hearAudio(blob, c) {
+    setState('thinking'); hud('transcrevendo');
+    const resume = (label) => { setState('idle', label); if (handsFree) setTimeout(startListening, 250); };
+    let r;
+    try {
+      const res = await postWav('/api/listen', blob);
+      if (res.status === 401) { askToken('Token inválido.'); return setState('idle'); }
+      r = await res.json();
+      if (!res.ok) throw new Error(r.error || 'HTTP ' + res.status);
+    } catch (e) {
+      hud('não consegui transcrever'); dbg('escuta: ' + e.message);
+      return resume();
+    }
+    const text = (r.text || '').trim(), sp = r.speaker || {};
+    if (!text) { hud('não entendi'); return resume(); }
+    hud(`entendi · ${text.split(/\s+/).length} palavras`);
+    if (sp.enrolled && sp.available) {
+      // Há voz cadastrada: só responde a quem ele reconhece. Um toque no núcleo vale como intenção.
+      const known = sp.match || (sp.short && talkOpen());
+      if (!known && !c.oneShot) { hud(`voz não reconhecida · ${Math.round((sp.score || 0) * 100)}%`); return resume(); }
+      if (sp.match) hud(`voz reconhecida · <b>${esc(sp.name)}</b> · ${Math.round(sp.score * 100)}%`);
+      return send(text, 'voice');
+    }
+    onHeard(text); // sem voz cadastrada: vale a regra do nome ou da conversa aberta
+  }
+  // Grava uma amostra de voz de tempo fixo (para o cadastro). Devolve o WAV.
+  async function recordSample(ms, onTick) {
+    stopListening(); if (capture) { capture = null; micClose(); listening = false; }
+    await micOpen();
+    return new Promise((done) => {
+      const t0s = performance.now();
+      const tick = setInterval(() => onTick(Math.max(0, Math.ceil((ms - (performance.now() - t0s)) / 1000))), 200);
+      capture = { fixedMs: ms, started: t0s, pending: new Float32Array(FRAME), fill: 0, frames: [], done: (wav) => { clearInterval(tick); done(wav); } };
+    });
+  }
+
   // ---------- Voz: escuta ----------
   let rec = null, listening = false, retries = 0, lastHeardAt = 0;
   const SILENCE_MS = 3000;      // pausa que encerra uma fala curta
   const LONG_SILENCE_MS = 4000; // em fala longa, espera mais (dá tempo de pensar)
   const NO_SPEECH_MS = 8000; // desiste se ninguém falar
   function startListening() {
+    if (serverListen) return micListen(!handsFree);
     if (!SR || listening || state === 'thinking' || state === 'speaking') return;
     // Encerra de vez qualquer sessão anterior, para ela não disparar eventos atrasados.
     if (rec) { rec.onresult = rec.onerror = rec.onend = null; try { rec.abort(); } catch {} }
@@ -870,7 +1015,7 @@
     dbg('escuta: iniciando');
     try { r.start(); stopSoon(NO_SPEECH_MS); } catch { failed = 'aborted'; finish(); }
   }
-  function stopListening() { if (rec && rec.stopNow) rec.stopNow(); }
+  function stopListening() { if (serverListen) return micEnd(); if (rec && rec.stopNow) rec.stopNow(); }
 
   function onHeard(said) {
     if (handsFree) {
@@ -895,21 +1040,28 @@
       if (handsFree && !listening) setTimeout(startListening, 300);
       return;
     }
+    if (handsFree && /\b(descans|pode dormir|dorm[ei]|para de (me )?ouvir|fica quieto|silencio)/.test(text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')) && text.split(/\s+/).length <= 7) {
+      setHandsFree(false, false); hud('em descanso · toque para chamar');
+      const msg = 'Descansando. Toque em mim quando precisar.';
+      showReply(msg);
+      if (channel === 'voice') { setState('speaking'); await speak(msg); }
+      return setState('idle');
+    }
     showAsked(text);
     setState('thinking');
-    hud('refletindo');
+    hud('pensando');
     try {
       const { reply, documents = [], trace } = await api('/api/chat', { text, channel });
       if (trace) {
         sys.active = trace.model; renderSys();
         const ACT = {
-          get_business_snapshot: 'consultando os números do negócio', list_events: 'revendo os acontecimentos',
-          update_rules: 'gravando uma nova regra', resolve_item: 'registrando a sua decisão',
-          remember: 'aprendendo algo novo', create_document: 'redigindo o documento',
+          get_business_snapshot: 'números do negócio', list_events: 'eventos recentes',
+          update_rules: 'regra gravada', resolve_item: 'decisão registrada',
+          remember: 'novo saber', create_document: 'documento em redação',
         };
-        if (sys.smart) hud(`mente <b>${mindOf(trace.model)}</b> acionada`);
+        if (sys.smart && trace.model === sys.smart) hud('<b>raciocínio aprofundado</b>');
         for (const tool of trace.tools || []) hud(ACT[tool] || 'trabalhando');
-        hud(`refletiu por ${((trace.ms || 0) / 1000).toFixed(1).replace('.', ',')} s`);
+        hud(`resposta em ${((trace.ms || 0) / 1000).toFixed(1).replace('.', ',')} s`);
       }
       for (const d of documents) hud(`documento pronto · ${esc(d.title)}`);
       showReply(reply, documents);
@@ -928,10 +1080,11 @@
   const NO_VOICE = 'Sem escuta neste navegador. Use Chrome, Edge ou Safari';
   orb.addEventListener('click', () => {
     unlockAll();
-    if (!SR) { $('text').focus(); return setState('idle', NO_VOICE); }
+    if (!canHear()) { $('text').focus(); return setState('idle', NO_VOICE); }
     if (state === 'thinking') return;
     // Tocar enquanto ele fala interrompe e já começa a ouvir.
     if (state === 'speaking') { stopSpeaking(); setState('idle'); retries = 0; return startListening(); }
+    if (listening && capture && !capture.recording && handsFree) return; // já está à espera da sua voz
     if (listening) return stopListening();
     retries = 0; startListening();
   });
@@ -944,13 +1097,13 @@
   }
   $('handsfree').addEventListener('click', () => {
     unlockAll();
-    if (!SR) return setState('idle', NO_VOICE);
+    if (!canHear()) return setState('idle', NO_VOICE);
     setHandsFree(!handsFree, true);
     hud(handsFree ? 'conversa aberta · pode falar sem tocar' : 'conversa por toque');
   });
   // A escolha fica guardada. Ao reabrir o app, o navegador exige um primeiro toque em qualquer lugar
   // para liberar microfone e som; depois disso ele passa a ouvir sozinho.
-  if (SR && mem.get('jarvis_handsfree') === 'on') {
+  if (mem.get('jarvis_handsfree') === 'on') {
     setHandsFree(true, false);
     const wake = (e) => {
       removeEventListener('pointerdown', wake, true);
@@ -986,6 +1139,45 @@
   wide.addEventListener('change', () => { if (state === 'idle') setState('idle'); });
   desk.addEventListener('change', () => { if (state === 'idle') setState('idle'); });
   $('hudbtn').addEventListener('click', () => { setHud(!hudOn); if (hudOn) hud('painel ativado'); });
+  // Cadastro de voz: três amostras de oito segundos dão um reconhecimento estável.
+  function voiceStatus(st) {
+    voicePeople = (st && st.people) || [];
+    $('voicestatus').textContent = !serverListen
+      ? 'O reconhecimento de voz precisa da transcrição no servidor, que não está ativa.'
+      : st && st.available === false
+        ? 'O modelo de reconhecimento de voz não carregou no servidor.'
+        : voicePeople.length
+          ? 'Vozes gravadas: ' + voicePeople.map((p) => `${p.name} (${p.samples} ${p.samples > 1 ? 'amostras' : 'amostra'})`).join(', ') + '. Três amostras por pessoa dão o melhor resultado.'
+          : 'Nenhuma voz gravada. Enquanto for assim, ele responde a qualquer pessoa que chamar pelo nome.';
+  }
+  $('voicebtn').addEventListener('click', async () => {
+    unlockAll(); $('voiceerr').textContent = ''; $('voice').showModal();
+    try { voiceStatus(await api('/api/voiceprint')); } catch { voiceStatus(null); }
+  });
+  $('voiceclose').addEventListener('click', () => $('voice').close());
+  $('voiceclear').addEventListener('click', async () => {
+    try { const r = await fetch('/api/voiceprint', { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } }); voiceStatus(await r.json()); hud('vozes apagadas'); } catch {}
+  });
+  $('voiceform').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('voicerec'), err = $('voiceerr');
+    if (btn.disabled) return;
+    if (!serverListen) { err.textContent = 'Transcrição no servidor não está ativa.'; return; }
+    btn.disabled = true; err.textContent = '';
+    const wasOn = handsFree; if (wasOn) setHandsFree(false, false);
+    try {
+      const wav = await recordSample(8000, (s) => (btn.textContent = s ? `Leia… ${s}` : 'Enviando'));
+      const res = await postWav('/api/voiceprint?name=' + encodeURIComponent($('voicename').value.trim() || 'dono'), wav);
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error || 'falhou');
+      voiceStatus(r); hud(`voz gravada · <b>${esc(r.name)}</b> · ${r.samples}ª amostra`);
+    } catch (x) {
+      err.textContent = x && x.name === 'NotAllowedError' ? 'Permita o microfone para gravar.' : 'Não deu certo: ' + ((x && x.message) || 'erro');
+      micClose(); capture = null;
+    }
+    btn.textContent = 'Gravar'; btn.disabled = false;
+    if (wasOn) setHandsFree(true, true);
+  });
   $('docsbtn').addEventListener('click', async () => {
     $('docs').showModal();
     try {

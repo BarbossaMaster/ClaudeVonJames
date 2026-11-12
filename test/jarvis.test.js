@@ -436,3 +436,67 @@ test('vida do assistente: nascimento fixo, saberes e memórias crescem com o uso
     await close();
   }
 });
+
+// WAV de teste: tom constante de `value` durante `seconds` (16 kHz, 16 bits, mono).
+function wav(value, seconds = 4) {
+  const n = Math.round(seconds * 16000), b = Buffer.alloc(44 + n * 2);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(16000, 24); b.writeUInt32LE(32000, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(value * 32767), 44 + i * 2);
+  return b;
+}
+
+test('escuta no servidor: transcreve a fala e reconhece de quem é a voz', async () => {
+  const speech = { enabled: true, canSpeak: false, listener: 'teste', transcribe: async (buf, mime) => `ouvi ${buf.length} bytes de ${mime}` };
+  const t = setup({ speech });
+  const { base, close } = await serve(t.app);
+  try {
+    const auth = { Authorization: 'Bearer segredo' }, h = { ...auth, 'Content-Type': 'audio/wav' };
+    const post = async (path, body) => { const r = await fetch(base + path, { method: 'POST', headers: h, body }); return { status: r.status, json: await r.json() }; };
+
+    // sem ninguém cadastrado: transcreve e avisa que não há impressão vocal
+    const a = await post('/api/listen', wav(0.5));
+    assert.match(a.json.text, /^ouvi \d+ bytes de audio\/wav$/);
+    assert.equal(a.json.speaker.enrolled, false);
+
+    // cadastro: amostra curta é recusada; duas amostras boas ficam guardadas
+    assert.equal((await post('/api/voiceprint?name=Dono', wav(0.5, 1))).status, 422);
+    assert.equal((await post('/api/voiceprint?name=Dono', wav(0.5))).json.samples, 1);
+    const e2 = await post('/api/voiceprint?name=Dono', wav(0.5));
+    assert.deepEqual(e2.json.people, [{ name: 'dono', samples: 2 }]);
+
+    // a voz do dono passa; outra voz não; fala curta vem marcada
+    assert.equal((await post('/api/listen', wav(0.5))).json.speaker.match, true);
+    const other = (await post('/api/listen', wav(-0.5))).json.speaker;
+    assert.equal(other.match, false);
+    assert.ok(other.score < 0.5);
+    assert.equal((await post('/api/listen', wav(0.5, 0.8))).json.speaker.short, true);
+
+    // estado, proteção e remoção
+    const state = await (await fetch(`${base}/api/state`, { headers: auth })).json();
+    assert.equal(state.system.listen, true);
+    assert.equal(state.system.voiceprint.people.length, 1);
+    assert.equal((await fetch(`${base}/api/listen`, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: wav(0.5) })).status, 401);
+    assert.equal((await post('/api/listen', Buffer.from('x'))).status, 400);
+    const del = await (await fetch(`${base}/api/voiceprint`, { method: 'DELETE', headers: auth })).json();
+    assert.deepEqual(del.people, []);
+  } finally {
+    await close();
+  }
+});
+
+test('transcrição: ElevenLabs primeiro; sem permissão na chave, explica o que falta', async () => {
+  const { createSpeech } = await import('../src/speech.js');
+  const calls = [];
+  const ok = (json) => ({ ok: true, status: 200, json: async () => json, text: async () => '' });
+  let s = createSpeech({ elevenKey: 'e', elevenVoice: 'v' }, { fetchImpl: async (url, init) => (calls.push({ url, init }), ok({ text: ' Bom dia. ' })) });
+  assert.equal(await s.transcribe(Buffer.from('wav'), 'audio/wav'), 'Bom dia.');
+  assert.equal(calls[0].url, 'https://api.elevenlabs.io/v1/speech-to-text');
+  assert.equal(calls[0].init.headers['xi-api-key'], 'e');
+  assert.equal(calls[0].init.body.get('model_id'), 'scribe_v1');
+  assert.equal(calls[0].init.body.get('language_code'), 'pt');
+
+  s = createSpeech({ elevenKey: 'e' }, { fetchImpl: async () => ({ ok: false, status: 401, text: async () => 'missing_permissions' }) });
+  await assert.rejects(() => s.transcribe(Buffer.from('wav'), 'audio/wav'), /permissão de Speech to Text/);
+  assert.equal(createSpeech({}).enabled, false);
+});
