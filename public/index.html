@@ -13,7 +13,7 @@
 <style>
   :root {
     --bg: #000; --text: #f2f4f3; --muted: #6f7773; --faint: #2a2f2c; --line: #161a18;
-    --green: #39ff14; --purple: #b026ff; --danger: #ff4d5e;
+    --green: #E3C173; --purple: #FFF1CF; /* dourado e branco quente da marca */ --danger: #ff4d5e;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -257,15 +257,15 @@
 
   // ---------- Núcleo visual: esfera holográfica de partículas que reage ao estado ----------
   // Camadas concêntricas de pontos e traços giram em sentidos opostos, cercadas por arcos orbitais.
-  // Parado ele respira; ouvindo fica atento e verde; pensando acelera e puxa para o roxo; falando pulsa.
+  // Parado ele respira; ouvindo acende; pensando as camadas giram e clareiam; falando pulsa no volume real da voz.
   const viz = $('viz'), g = viz.getContext('2d');
-  const GREEN = [57, 255, 20], PURPLE = [176, 38, 255];
-  // alvo por estado: giro, energia (pulso da fala), roxo, brilho, núcleo, turbulência
+  const GOLD = [227, 188, 105], WHITE = [255, 245, 222];
+  // alvo por estado: giro, energia (quanto a fala move a esfera), branco, brilho, núcleo, agitação
   const TARGET = {
-    idle:      { spin: .10, energy: .015, purple: .22, glow: .62, core: .45, churn: .15 },
-    listening: { spin: .16, energy: .05,  purple: .04, glow: .95, core: .75, churn: .10 },
-    thinking:  { spin: .85, energy: .03,  purple: .92, glow: .90, core: 1.0, churn: 1.0 },
-    speaking:  { spin: .26, energy: .20,  purple: .10, glow: 1.0, core: 1.0, churn: .30 },
+    idle:      { spin: .045, energy: 0,   white: 0,   glow: .60, core: .40, churn: .06 },
+    listening: { spin: .06,  energy: 0,   white: .12, glow: .95, core: .70, churn: .05 },
+    thinking:  { spin: .20,  energy: 0,   white: .50, glow: .90, core: 1.0, churn: .36 },
+    speaking:  { spin: .07,  energy: .24, white: .18, glow: 1.0, core: .90, churn: .10 },
   };
   const cur = { ...TARGET.idle };
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -293,7 +293,7 @@
     segs: Array.from({ length: 2 + Math.floor(rand() * 3) }, () => [rand() * 6.283, .35 + rand() * 1.3]),
   }));
 
-  let W = 0, H = 0, T = 0, lastT = 0, rotY = 0, shellRot = [0, 0, 0], arcRot = arcs.map(() => 0), mouth = 0;
+  let W = 0, H = 0, T = 0, lastT = 0, rotY = 0, shellRot = [0, 0, 0], arcRot = arcs.map(() => 0), mouth = 0, spiralRot = 0;
   function fit() {
     const r = viz.getBoundingClientRect(), d = Math.min(devicePixelRatio || 1, 2);
     viz.width = W = Math.round(r.width * d); viz.height = H = Math.round(r.height * d);
@@ -315,17 +315,24 @@
     for (const k in cur) cur[k] += (tg[k] - cur[k]) * ease;
     T += dt;
     rotY += dt * cur.spin;
-    SHELLS.forEach((sh, i) => (shellRot[i] += dt * sh.dir * (.05 + cur.churn * .9)));
-    arcs.forEach((a, i) => (arcRot[i] += dt * a.speed * (.35 + cur.churn * 1.6 + cur.energy * 2)));
-    // Envelope de fala: soma de ondas em ritmos diferentes, com cara de sílabas.
-    const syll = Math.abs(Math.sin(T * 9.1)) * .5 + Math.abs(Math.sin(T * 5.3 + 1)) * .3 + Math.abs(Math.sin(T * 14.7 + 2)) * .2;
-    mouth += ((cur.energy > .1 ? syll : .35 + .25 * Math.sin(T * 1.3)) - mouth) * Math.min(1, dt * 14);
+    SHELLS.forEach((sh, i) => (shellRot[i] += dt * sh.dir * (.025 + cur.churn * .7)));
+    arcs.forEach((a, i) => (arcRot[i] += dt * a.speed * (.22 + cur.churn * 1.2)));
+    spiralRot += dt * (.25 + cur.churn * 2.2);
+    // Boca: segue o volume real do áudio que está tocando. Sem esse dado (voz do aparelho),
+    // usa um ritmo simulado de sílabas. Sobe rápido e desce devagar, como uma voz.
+    let level = 0;
+    if (orb.dataset.state === 'speaking') {
+      const real = speechLevel();
+      level = real ?? Math.abs(Math.sin(T * 6.1)) * .5 + Math.abs(Math.sin(T * 3.7 + 1)) * .3 + Math.abs(Math.sin(T * 9.3 + 2)) * .2;
+    }
+    mouth += (level - mouth) * Math.min(1, dt * (level > mouth ? 24 : 8));
     const pulse = cur.energy * mouth;
+    const breath = Math.sin(T * .9) * .012; // respiração lenta, sempre presente
 
     const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .285, u = W / 320;
     g.clearRect(0, 0, W, H);
     g.globalCompositeOperation = 'lighter';
-    const main = mix(GREEN, PURPLE, cur.purple), second = mix(PURPLE, GREEN, cur.purple);
+    const main = mix(GOLD, WHITE, cur.white), second = mix(WHITE, GOLD, .22);
 
     // brilho de fundo e núcleo
     const halo = g.createRadialGradient(cx, cy, 0, cx, cy, R * 1.7);
@@ -335,7 +342,7 @@
     g.fillStyle = halo; g.fillRect(0, 0, W, H);
     const cr = R * (.16 + cur.core * .1 + pulse * .5);
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, cr);
-    core.addColorStop(0, rgba([235, 255, 235], .75 * cur.core * cur.glow));
+    core.addColorStop(0, rgba([255, 251, 240], .8 * cur.core * cur.glow));
     core.addColorStop(.35, rgba(second, .45 * cur.core * cur.glow));
     core.addColorStop(1, rgba(second, 0));
     g.fillStyle = core; g.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
@@ -362,7 +369,7 @@
     g.strokeStyle = rgba(main, .09 * cur.glow); g.lineWidth = .7 * u; g.stroke();
 
     // espiral do núcleo: dois braços que giram, mais rápido quando ele pensa
-    const spin = T * (.6 + cur.churn * 3.2);
+    const spin = spiralRot;
     for (let arm = 0; arm < 2; arm++) {
       g.beginPath();
       for (let j = 0; j <= 40; j++) {
@@ -377,9 +384,9 @@
     const dots = {}, lines = {};
     for (const p of pts) {
       const sh = SHELLS[p.shell];
-      const wob = Math.sin(p.seed + T * (1.2 + cur.churn * 3)) * (.012 + cur.churn * .035);
-      const wave = Math.sin(p.y * 5 - T * 7 + p.shell) * pulse * 1.25;
-      const r = sh.r * p.jit * (1 + wob + wave + pulse * .35);
+      const wob = Math.sin(p.seed + T * 1.1) * (.008 + cur.churn * .05);
+      const wave = Math.sin(p.y * 4 - T * 2.6 + p.shell) * pulse * .42;
+      const r = sh.r * p.jit * (1 + breath + wob + wave + pulse * .3);
       const phi = p.phi + rotY + shellRot[p.shell];
       const [x, y, z] = project(Math.cos(phi) * p.rad * r, p.y * r, Math.sin(phi) * p.rad * r, R, cx, cy);
       const depth = (z / sh.r + 1) / 2;                       // 0 atrás, 1 na frente
@@ -415,7 +422,7 @@
     // arcos orbitais: um traço largo e fraco por baixo dá o brilho, um fino por cima dá a nitidez
     arcs.forEach((a, i) => {
       const cxr = Math.cos(a.tiltX), sxr = Math.sin(a.tiltX), czr = Math.cos(a.tiltZ), szr = Math.sin(a.tiltZ);
-      const col = a.alt ? second : main, rr = a.r * (1 + pulse * .5);
+      const col = a.alt ? second : main, rr = a.r * (1 + pulse * .3);
       g.beginPath();
       for (const [start, len] of a.segs) {
         for (let j = 0; j <= 26; j++) {
@@ -495,12 +502,37 @@
   // A fala sempre termina por um destes caminhos: o áudio acabou, o tempo máximo estourou
   // ou o usuário interrompeu. Sem isso, um evento perdido no iPhone travava o app em "Falando".
   let endSpeech = null, lastUrl = null;
+  // Volume da fala ao longo do tempo, calculado do próprio áudio antes de tocar. O áudio continua
+  // tocando pelo player normal; isto só lê os dados para a esfera se mexer junto com a voz.
+  let speechEnv = null, decodeCtx = null;
+  function speechLevel() {
+    if (!speechEnv || player.paused || !(player.currentTime > 0)) return null;
+    return speechEnv.data[Math.floor(player.currentTime / speechEnv.step)] ?? 0;
+  }
+  function envelopeOf(buffer) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return Promise.reject(new Error('sem AudioContext'));
+    decodeCtx ||= new AC();
+    return new Promise((res, rej) => decodeCtx.decodeAudioData(buffer, res, rej)).then((audio) => {
+      const ch = audio.getChannelData(0), step = .04, n = Math.max(1, Math.floor(audio.sampleRate * step));
+      const data = new Float32Array(Math.ceil(ch.length / n));
+      let peak = 1e-6;
+      for (let i = 0; i < data.length; i++) {
+        let sum = 0; const end = Math.min(ch.length, (i + 1) * n);
+        for (let k = i * n; k < end; k += 4) sum += ch[k] * ch[k];
+        data[i] = Math.sqrt(sum / Math.max(1, (end - i * n) / 4));
+        if (data[i] > peak) peak = data[i];
+      }
+      for (let i = 0; i < data.length; i++) data[i] = Math.min(1, Math.pow(data[i] / peak, .7));
+      return { data, step };
+    });
+  }
   function speak(text) {
     return new Promise((resolve) => {
       let done = false, timer = null;
       const finish = (why = 'evento') => {
         if (done) return; done = true;
-        clearTimeout(timer); endSpeech = null;
+        clearTimeout(timer); endSpeech = null; speechEnv = null;
         player.onended = player.onerror = player.onloadedmetadata = null;
         // Devolve o áudio do aparelho: no iPhone, um player ainda "ativo" deixa o microfone surdo na escuta seguinte.
         try { player.pause(); player.removeAttribute('src'); player.load(); } catch {}
@@ -534,6 +566,7 @@
           if (done) return;
           if (lastUrl) URL.revokeObjectURL(lastUrl);
           lastUrl = URL.createObjectURL(blob);
+          blob.arrayBuffer().then(envelopeOf).then((env) => { if (!done) speechEnv = env; dbg('fala: volume real ok'); }, () => dbg('fala: sem volume real'));
           player.onended = () => finish('áudio terminou');
           player.onerror = () => { dbg('fala: erro no player'); browser(); };
           dbg('fala: tocando áudio');
