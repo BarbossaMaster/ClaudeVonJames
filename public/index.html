@@ -329,7 +329,7 @@
     const pulse = cur.energy * mouth;
     const breath = Math.sin(T * .9) * .012; // respiração lenta, sempre presente
 
-    const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .285, u = W / 320;
+    const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .265, u = W / 320;
     g.clearRect(0, 0, W, H);
     g.globalCompositeOperation = 'lighter';
     const main = mix(GOLD, WHITE, cur.white), second = mix(WHITE, GOLD, .22);
@@ -513,7 +513,11 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return Promise.reject(new Error('sem AudioContext'));
     decodeCtx ||= new AC();
-    return new Promise((res, rej) => decodeCtx.decodeAudioData(buffer, res, rej)).then((audio) => {
+    return new Promise((res, rej) => {
+      // Navegadores novos também devolvem uma promessa; ela é silenciada para a falha não aparecer duas vezes.
+      const pr = decodeCtx.decodeAudioData(buffer, res, rej);
+      if (pr && pr.catch) pr.catch(() => {});
+    }).then((audio) => {
       const ch = audio.getChannelData(0), step = .04, n = Math.max(1, Math.floor(audio.sampleRate * step));
       const data = new Float32Array(Math.ceil(ch.length / n));
       let peak = 1e-6;
