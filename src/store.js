@@ -30,6 +30,8 @@ CREATE INDEX IF NOT EXISTS turns_contact ON turns(contact, id);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, title TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, name TEXT NOT NULL, mime TEXT, pages INTEGER, text TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agenda (id INTEGER PRIMARY KEY AUTOINCREMENT, start INTEGER NOT NULL, end INTEGER NOT NULL, title TEXT NOT NULL, notes TEXT, created INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS agenda_start ON agenda(start);
 CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, ts INTEGER NOT NULL);
 `;
 
@@ -143,6 +145,21 @@ export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
 
     listDocuments(limit = 30) {
       return db.prepare('SELECT * FROM documents ORDER BY ts DESC, rowid DESC LIMIT ?').all(limit);
+    },
+
+    addAppointment(a) {
+      const r = db.prepare('INSERT INTO agenda (start, end, title, notes, created) VALUES (?,?,?,?,?)').run(a.start, a.end, a.title, a.notes ?? '', now());
+      return Number(r.lastInsertRowid);
+    },
+    getAppointment(id) {
+      return db.prepare('SELECT * FROM agenda WHERE id = ?').get(id);
+    },
+    /** Compromissos que terminam depois de `from` e começam antes de `to`. */
+    listAppointments(from, to, limit = 100) {
+      return db.prepare('SELECT * FROM agenda WHERE end > ? AND start < ? ORDER BY start LIMIT ?').all(from, to, limit);
+    },
+    removeAppointment(id) {
+      db.prepare('DELETE FROM agenda WHERE id = ?').run(id);
     },
 
     addFile(f) {

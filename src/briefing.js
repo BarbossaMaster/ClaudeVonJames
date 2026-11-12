@@ -63,7 +63,7 @@ export function briefingText(snap, config) {
  * Envia o resumo diário uma vez por dia, a partir da hora configurada.
  * `force` ignora o horário (usado por POST /api/briefing).
  */
-export async function runBriefing({ store, config, notifyOwner, force = false }) {
+export async function runBriefing({ store, config, notifyOwner, agenda = null, force = false }) {
   const now = store.now();
   const { dateKey, hour } = localTime(now, config.timezone);
   const last = store.get('lastBriefing', { dateKey: null, ts: 0 });
@@ -71,7 +71,11 @@ export async function runBriefing({ store, config, notifyOwner, force = false })
 
   const since = last.ts ? last.ts + 1 : now - 24 * 3600 * 1000;
   const snap = snapshot(store, config, since);
-  const text = briefingText(snap, config);
+  let text = briefingText(snap, config);
+  if (agenda) {
+    const soon = agenda.upcoming(2, 12).filter((e) => e.day !== dateKey || e.start > now);
+    if (soon.length) text += '\nAgenda:\n' + soon.map((e) => `${e.when} · ${e.title}`).join('\n');
+  }
   // Marca antes de enviar: uma falha de envio não pode virar spam de reenvio a cada minuto.
   store.set('lastBriefing', { dateKey, ts: now });
   await notifyOwner(text, { kind: 'briefing' });

@@ -153,6 +153,31 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: 'schedule_event',
+    description:
+      'Marca um compromisso na agenda do dono (reunião, demonstração, retorno a cliente, prazo). Confirme dia e hora na resposta.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'O que é, com quem.' },
+        start: { type: 'string', description: 'Início no horário local, formato AAAA-MM-DDTHH:MM. Calcule a partir da data e hora atuais informadas na conversa.' },
+        duration_minutes: { type: 'number', description: 'Duração em minutos. Padrão 60.' },
+        notes: { type: 'string', description: 'Detalhes úteis: pauta, link, telefone.' },
+      },
+      required: ['title', 'start'],
+    },
+  },
+  {
+    name: 'list_agenda',
+    description: 'Lista os compromissos dos próximos dias. Os dos próximos sete dias já vêm no contexto; use para períodos maiores.',
+    input_schema: { type: 'object', properties: { days: { type: 'number', description: 'Quantos dias à frente. Padrão 30.' } } },
+  },
+  {
+    name: 'cancel_event',
+    description: 'Remove um compromisso da agenda, pelo número (#id).',
+    input_schema: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] },
+  },
+  {
     name: 'search_files',
     description:
       'Procura por palavras nos arquivos que o dono enviou (contratos, planilhas, propostas, relatórios) e devolve os trechos onde aparecem. Use quando a pergunta puder estar respondida no material dele.',
@@ -207,13 +232,16 @@ const CONTACT_TOOLS = [
   },
 ];
 
-export function createBrain({ store, config, notifyOwner, sendToContact, documents, sendDocumentToOwner, files, client, log = console.error }) {
+export function createBrain({ store, config, notifyOwner, sendToContact, documents, sendDocumentToOwner, files, agenda, client, log = console.error }) {
   let anthropic = client;
   const getClient = () => (anthropic ??= new Anthropic());
 
   const days = (n) => store.now() - Math.max(0.05, Number(n) || 1) * 24 * 3600 * 1000;
 
   const ownerHandlers = (ctx) => ({
+    schedule_event: (input) => { if (!agenda) throw new Error('agenda indisponível'); return agenda.add(input); },
+    list_agenda: ({ days }) => { if (!agenda) throw new Error('agenda indisponível'); return agenda.upcoming(Math.min(365, Number(days) || 30)); },
+    cancel_event: ({ id }) => { if (!agenda) throw new Error('agenda indisponível'); return { cancelled: agenda.remove(id) }; },
     search_files: ({ query }) => {
       if (!files) throw new Error('arquivos indisponíveis');
       const hits = files.search(query);
@@ -485,7 +513,8 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
           effort: channel === 'voice' ? config.voiceEffort : config.textEffort,
           fast: channel === 'voice' && config.fastVoice,
           // Os números do dia já vão no contexto: a pergunta mais comum dispensa uma ida e volta de ferramenta.
-          context: `[Números das últimas 24 horas, já consultados agora: ${JSON.stringify(snapshot(store, config, days(1)))}. Para outros períodos ou detalhes, use as ferramentas.]`,
+          context: `[Números das últimas 24 horas, já consultados agora: ${JSON.stringify(snapshot(store, config, days(1)))}. Para outros períodos ou detalhes, use as ferramentas.]` +
+            (agenda ? `\n[Agenda dos próximos 7 dias: ${JSON.stringify(agenda.upcoming(7, 30).map((e) => ({ id: e.id, quando: e.when, titulo: e.title })))}]` : ''),
         });
         meta.ms = Date.now() - t0;
         return reply;

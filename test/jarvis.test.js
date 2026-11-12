@@ -136,7 +136,7 @@ test('áudio no WhatsApp: transcreve, responde em áudio; sem voz configurada pe
   const a = setup({ script: [say('Tudo em ordem, senhor.')], speech });
   await a.jarvis.handleWhatsApp({ id: 'a1', from: OWNER, type: 'audio', audioId: 'media1' });
   assert.equal(a.sent[0].audio.toString(), 'voice:Tudo em ordem, senhor.');
-  assert.equal(a.client.requests[0].tools.length, 8, 'áudio do dono usa as ferramentas do dono');
+  assert.equal(a.client.requests[0].tools.length, 11, 'áudio do dono usa as ferramentas do dono');
 
   const b = setup();
   await b.jarvis.handleWhatsApp({ id: 'a1', from: CLIENT, type: 'audio', audioId: 'media1' });
@@ -558,4 +558,54 @@ test('arquivos do dono: envia, o James busca e lê; cliente não enxerga; PDF vi
   } finally {
     await close();
   }
+});
+
+test('agenda: o dono marca por conversa, vê na lista, exporta para o calendário e recebe no resumo', async () => {
+  const t = setup({ script: [use('schedule_event', { title: 'Demonstração com a Ana', start: '2026-11-12T15:30', duration_minutes: 45, notes: 'Mostrar o pipeline' }), say('Marcado para amanhã às 15h30.')] });
+  const { base, close } = await serve(t.app);
+  try {
+    const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+    await fetch(`${base}/api/chat`, { method: 'POST', headers: h, body: JSON.stringify({ text: 'marca uma demonstração com a Ana amanhã às 15h30' }) });
+    assert.match(t.client.requests[0].messages.at(-1).content, /Agenda dos próximos 7 dias: \[\]/);
+
+    const list = await (await fetch(`${base}/api/agenda`, { headers: h })).json();
+    assert.equal(list.events.length, 1);
+    assert.equal(list.events[0].title, 'Demonstração com a Ana');
+    assert.match(list.events[0].when, /12\/11\/2026.*15:30/, 'guardado no horário de São Paulo');
+    assert.equal(list.events[0].minutes, 45);
+
+    // calendário para o celular: só abre com a chave; horário em UTC (15:30 em SP = 18:30Z)
+    const ics = await fetch(base + list.ics);
+    assert.match(ics.headers.get('content-type'), /text\/calendar/);
+    const body = await ics.text();
+    assert.match(body, /DTSTART:20261112T183000Z/);
+    assert.match(body, /SUMMARY:Demonstração com a Ana/);
+    assert.equal((await fetch(`${base}/cal/chave-errada.ics`)).status, 404);
+
+    // direto pela tela, validação, próximo compromisso no estado e remoção
+    const add = await fetch(`${base}/api/agenda`, { method: 'POST', headers: h, body: JSON.stringify({ title: 'Reunião com o sócio', start: '2026-11-11T16:00' }) });
+    assert.equal(add.status, 201);
+    assert.equal((await fetch(`${base}/api/agenda`, { method: 'POST', headers: h, body: JSON.stringify({ title: 'x', start: 'amanhã' }) })).status, 422);
+    const state = await (await fetch(`${base}/api/state`, { headers: h })).json();
+    assert.equal(state.system.next.title, 'Reunião com o sócio');
+    assert.equal((await fetch(`${base}/api/agenda`)).status, 401);
+
+    // resumo das 18h traz a agenda
+    t.advance(7 * 3600 * 1000);
+    const { runBriefing } = await import('../src/briefing.js');
+    const text = await runBriefing({ store: t.store, config: t.config, notifyOwner: async () => {}, agenda: t.agenda });
+    assert.match(text, /Agenda:\n.*15:30 · Demonstração com a Ana/);
+
+    const del = await (await fetch(`${base}/api/agenda/${list.events[0].id}`, { method: 'DELETE', headers: h })).json();
+    assert.equal(del.events.some((e) => e.title === 'Demonstração com a Ana'), false);
+  } finally {
+    await close();
+  }
+});
+
+test('modelo das conversas: Sonnet fixo por padrão; a troca automática só liga por opção', async () => {
+  const { loadConfig } = await import('../src/config.js');
+  assert.equal(loadConfig({}).router, false);
+  assert.equal(loadConfig({}).model, 'claude-sonnet-5-5');
+  assert.equal(loadConfig({ JARVIS_ROUTER: 'on' }).router, true);
 });

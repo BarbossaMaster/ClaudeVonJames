@@ -31,11 +31,11 @@ export function loadConfig(env = process.env) {
     // Token que protege o app de voz e a API de eventos.
     token: env.JARVIS_TOKEN || '',
 
-    // Modelo do dia a dia e modelo para assuntos importantes. A troca é automática (JARVIS_ROUTER=off desliga).
+    // Modelo das conversas. Com JARVIS_ROUTER=on, assuntos importantes sobem sozinhos para JARVIS_SMART_MODEL.
     model: env.JARVIS_MODEL || 'claude-sonnet-5-5',
     smartModel: env.JARVIS_SMART_MODEL || 'claude-opus-5-5',
     routerModel: env.JARVIS_ROUTER_MODEL || 'claude-haiku-5-5',
-    router: !/^(0|off|false|nao|não)$/i.test(env.JARVIS_ROUTER || ''),
+    router: /^(1|on|true|sim)$/i.test(env.JARVIS_ROUTER || ''), // desligada por padrão: toda conversa usa JARVIS_MODEL
     // Profundidade de raciocínio: low | medium | high | xhigh | max. Mais alto pensa melhor, demora e custa mais.
     voiceEffort: effort(env.JARVIS_VOICE_EFFORT, 'medium'),
     textEffort: effort(env.JARVIS_EFFORT, 'medium'),

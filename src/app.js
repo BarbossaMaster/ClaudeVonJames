@@ -120,7 +120,7 @@ export function createJarvis({ store, config, whatsapp, speech, brain, log = con
   return { notifyOwner, ingestEvent, handleWhatsApp, sendDocumentToOwner };
 }
 
-export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files, log = console.error }) {
+export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files, agenda, log = console.error }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -232,6 +232,24 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
     }),
   );
 
+  // Agenda: listar, marcar e desmarcar. O endereço /cal/<chave>.ics serve para assinar no calendário do celular.
+  app.get('/api/agenda', auth, (req, res) => {
+    res.json({ events: agenda ? agenda.upcoming(Math.min(365, Number(req.query.days) || 60)) : [], ics: agenda ? `/cal/${agenda.icsKey()}.ics` : null });
+  });
+  app.post('/api/agenda', auth, (req, res) => {
+    if (!agenda) return res.status(503).json({ error: 'agenda indisponível' });
+    try { res.status(201).json(agenda.add(req.body ?? {})); } catch (e) { res.status(422).json({ error: e.message }); }
+  });
+  app.delete('/api/agenda/:id', auth, (req, res) => {
+    try { agenda.remove(req.params.id); } catch { /* já não existe */ }
+    res.json({ events: agenda ? agenda.upcoming(60) : [] });
+  });
+  app.get('/cal/:file', (req, res) => {
+    const key = String(req.params.file).replace(/\.ics$/i, '');
+    if (!agenda || !safeEqual(key, agenda.icsKey())) return res.sendStatus(404);
+    res.set({ 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }).send(agenda.ics());
+  });
+
   // Arquivos do dono: enviar (o corpo é o próprio arquivo; o nome vem no cabeçalho x-filename), listar e apagar.
   // Ficam só no modo dono: o atendimento a clientes não enxerga esse material.
   app.get('/api/files', auth, (_req, res) => res.json({ files: files ? files.list() : [] }));
@@ -328,6 +346,8 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
         voiceprint: voiceprints ? voiceprints.status() : { available: false, people: [] },
         ...knowledgeStats(),
         documents: documents ? documents.list(200).length : 0,
+        files: files ? files.list().length : 0,
+        next: agenda ? agenda.next() : null,
         rules: getRules(store, config).instructions.length,
       },
     });
@@ -350,7 +370,7 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
     '/api/briefing',
     auth,
     wrap(async (_req, res) => {
-      const text = await runBriefing({ store, config, notifyOwner: jarvis.notifyOwner, force: true });
+      const text = await runBriefing({ store, config, notifyOwner: jarvis.notifyOwner, agenda, force: true });
       res.json({ sent: true, text });
     }),
   );
