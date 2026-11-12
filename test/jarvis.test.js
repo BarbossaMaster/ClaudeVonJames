@@ -417,3 +417,22 @@ test('rastro do turno: ferramentas e voltas chegam ao app; estado traz o resumo 
     await close();
   }
 });
+
+test('vida do assistente: nascimento fixo, saberes e memórias crescem com o uso', async () => {
+  const t = setup({ script: [use('remember', { fact: 'A garantia é de um ano.' }), say('Anotado.')] });
+  const { base, close } = await serve(t.app);
+  try {
+    const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+    const get = async () => (await (await fetch(`${base}/api/state`, { headers: h })).json()).system;
+    const a = await get();
+    assert.ok(a.bornAt > 0);
+    t.advance(3600_000);
+    await fetch(`${base}/api/chat`, { method: 'POST', headers: h, body: JSON.stringify({ text: 'anota: a garantia é de um ano' }) });
+    const b = await get();
+    assert.equal(b.bornAt, a.bornAt, 'a data de nascimento não muda');
+    assert.equal(b.saberes, a.saberes + 1, 'o fato ensinado vira um saber');
+    assert.equal(b.memorias, a.memorias + 2, 'pergunta e resposta viram memórias');
+  } finally {
+    await close();
+  }
+});

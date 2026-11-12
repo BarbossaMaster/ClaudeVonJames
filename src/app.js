@@ -2,6 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { getRules } from './store.js';
+import { loadKnowledge } from './knowledge.js';
 import { snapshot, runBriefing } from './briefing.js';
 import { parseWebhook } from './whatsapp.js';
 import { money, samePhone, safeEqual, keyedQueue } from './util.js';
@@ -124,6 +125,23 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => (req.rawBody = buf) }));
 
+  // Momento em que o assistente ficou online pela primeira vez; fica gravado e nunca mais muda.
+  const bornAt = () => {
+    let ts = store.get('bornAt', 0);
+    if (!ts) { ts = store.now(); store.set('bornAt', ts); }
+    return ts;
+  };
+  bornAt();
+  // Saberes: cada linha de conteúdo da base de conhecimento, cada fato ensinado e cada regra.
+  // Memórias: cada fala guardada e cada acontecimento registrado.
+  const knowledgeStats = () => {
+    const facts = loadKnowledge(config.knowledgeDir, store)
+      .split('\n')
+      .filter((l) => { const t = l.trim(); return t.length > 3 && !/^(#|>|---)/.test(t); }).length;
+    const c = store.counts();
+    return { saberes: facts + getRules(store, config).instructions.length, memorias: c.turns + c.events };
+  };
+
   const auth = (req, res, next) => {
     const header = req.get('authorization') ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : req.get('x-jarvis-token');
@@ -208,6 +226,7 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
   app.get('/api/state', auth, (_req, res) => {
     res.json({
       assistant: config.assistantName,
+      now: store.now(),
       rules: getRules(store, config),
       today: snapshot(store, config, store.now() - DAY),
       whatsappLive: whatsapp.live,
@@ -219,6 +238,8 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
         smartModel: config.router ? config.smartModel : null,
         voice: speech?.provider ?? 'aparelho',
         uptimeS: Math.round(process.uptime()),
+        bornAt: bornAt(),
+        ...knowledgeStats(),
         documents: documents ? documents.list(200).length : 0,
         rules: getRules(store, config).instructions.length,
       },

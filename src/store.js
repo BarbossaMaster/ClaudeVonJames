@@ -144,6 +144,14 @@ export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
       return db.prepare('SELECT * FROM documents ORDER BY ts DESC, rowid DESC LIMIT ?').all(limit);
     },
 
+    /** Quantas falas e quantos eventos estão guardados. */
+    counts() {
+      return {
+        turns: db.prepare('SELECT COUNT(*) AS n FROM turns').get().n,
+        events: db.prepare('SELECT COUNT(*) AS n FROM events').get().n,
+      };
+    },
+
     /** true se este id já foi processado (o WhatsApp reenvia webhooks). */
     alreadySeen(id) {
       const r = db.prepare('INSERT OR IGNORE INTO seen (id, ts) VALUES (?, ?)').run(id, now());
