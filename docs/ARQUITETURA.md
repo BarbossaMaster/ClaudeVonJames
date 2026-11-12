@@ -7,7 +7,7 @@ Assistente de IA que opera a Astro Gold pelo dono: conversa por voz, atende no W
 ```
                        ┌──────────────────────────── Railway ────────────────────────────┐
  iPhone (app web) ─────┤  Express (Node.js 22)                                           │
-   voz e texto         │    ├─ /api/chat      conversa do dono ──▶ Cérebro ──▶ Claude    │──▶ Anthropic (Claude Opus 5.5)
+   voz e texto         │    ├─ /api/chat      conversa do dono ──▶ Cérebro ──▶ Claude    │──▶ Anthropic (Claude Sonnet 5.5)
                        │    ├─ /api/speak     texto → áudio ─────────────────────────────│──▶ ElevenLabs / OpenAI
  WhatsApp (Meta) ──────┤    ├─ /webhooks/whatsapp   dono ou cliente                      │──▶ Meta Cloud API
                        │    ├─ /api/events    vendas, membros, reembolsos                │
@@ -25,7 +25,7 @@ Um único processo Node faz tudo: serve o app, fala com o Claude, guarda os dado
 |---|---|---|
 | Servidor | Node.js 22 + Express, JavaScript puro (ESM) | Sem etapa de build; sobe com `npm start` |
 | Banco | SQLite embutido do Node (`node:sqlite`) | Nenhum serviço a mais; um arquivo no volume |
-| Cérebro | Claude Opus 5.5 pelo SDK oficial `@anthropic-ai/sdk` | Raciocínio e uso de ferramentas |
+| Cérebro | Claude Sonnet 5.5 (trocável por `JARVIS_MODEL`) pelo SDK oficial `@anthropic-ai/sdk` | Raciocínio e uso de ferramentas |
 | Voz (fala) | ElevenLabs; OpenAI como alternativa; voz do aparelho como reserva | Voz natural, com queda suave se faltar crédito |
 | Voz (escuta) | Reconhecimento de voz do navegador (Web Speech API) | Sem custo; roda no próprio iPhone |
 | PDF | `pdfkit` | Gera no servidor, sem navegador headless |

@@ -329,7 +329,8 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
         fallbacks: 'default',
         thinking: { type: 'adaptive' },
         output_config: { effort },
-        ...(fast ? { speed: 'fast' } : {}),
+        // O modo rápido só existe em alguns modelos; nos outros o parâmetro daria erro.
+        ...(fast && /opus-5-5|fable-5-2|mythos-5-2/.test(config.model) ? { speed: 'fast' } : {}),
         cache_control: { type: 'ephemeral' },
         system,
         tools,

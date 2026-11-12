@@ -23,7 +23,7 @@ export function loadConfig(env = process.env) {
     // Token que protege o app de voz e a API de eventos.
     token: env.JARVIS_TOKEN || '',
 
-    model: env.JARVIS_MODEL || 'claude-opus-5-5',
+    model: env.JARVIS_MODEL || 'claude-sonnet-5-5',
     // Profundidade de raciocínio: low | medium | high | xhigh | max. Mais alto pensa melhor, demora e custa mais.
     voiceEffort: effort(env.JARVIS_VOICE_EFFORT, 'medium'),
     textEffort: effort(env.JARVIS_EFFORT, 'medium'),

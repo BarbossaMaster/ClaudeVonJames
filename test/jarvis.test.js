@@ -73,7 +73,7 @@ test('dono dita a regra por voz e ela passa a valer', async () => {
 
   // a requisição ao Claude segue o formato esperado e devolve o resultado da ferramenta
   const [first, second] = client.requests;
-  assert.equal(first.model, 'claude-opus-5-5');
+  assert.equal(first.model, 'claude-sonnet-5-5');
   assert.equal(first.output_config.effort, 'medium');
   assert.match(first.messages.at(-1).content, /lida em voz alta/);
   assert.equal(second.messages.at(-1).content[0].type, 'tool_result');
@@ -252,7 +252,7 @@ test('voz mais ágil: números do dia vão no contexto e o modo rápido é opcio
   assert.match(req.messages.at(-1).content, /"newMembers":1/);
   assert.equal(req.speed, undefined);
 
-  const b = setup({ script: [say('Ok.'), say('Ok.')], env: { JARVIS_FAST: '1', VOICE_SPEED: '9' } });
+  const b = setup({ script: [say('Ok.'), say('Ok.')], env: { JARVIS_FAST: '1', VOICE_SPEED: '9', JARVIS_MODEL: 'claude-opus-5-5' } });
   await b.brain.owner('oi', { channel: 'voice' });
   await b.brain.owner('oi', { channel: 'text' });
   assert.equal(b.client.requests[0].speed, 'fast');
@@ -345,4 +345,11 @@ test('roteiro de atendimento: entra na base dos dois modos, com a orientação d
   const owner = t.client.requests[1].system;
   assert.match(owner, /Arquivo: atendimento-whatsapp\.md/);
   assert.match(owner, /valem para quem está de fora, não para ele/);
+});
+
+test('modo rápido não é enviado a modelos que não o aceitam', async () => {
+  const t = setup({ script: [say('ok')], env: { JARVIS_FAST: '1' } }); // padrão: Sonnet
+  await t.brain.owner('oi', { channel: 'voice' });
+  assert.equal(t.client.requests[0].model, 'claude-sonnet-5-5');
+  assert.equal(t.client.requests[0].speed, undefined);
 });
