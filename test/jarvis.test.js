@@ -136,7 +136,7 @@ test('áudio no WhatsApp: transcreve, responde em áudio; sem voz configurada pe
   const a = setup({ script: [say('Tudo em ordem, senhor.')], speech });
   await a.jarvis.handleWhatsApp({ id: 'a1', from: OWNER, type: 'audio', audioId: 'media1' });
   assert.equal(a.sent[0].audio.toString(), 'voice:Tudo em ordem, senhor.');
-  assert.equal(a.client.requests[0].tools.length, 11, 'áudio do dono usa as ferramentas do dono');
+  assert.equal(a.client.requests[0].tools.length, 13, 'áudio do dono usa as ferramentas do dono');
 
   const b = setup();
   await b.jarvis.handleWhatsApp({ id: 'a1', from: CLIENT, type: 'audio', audioId: 'media1' });
@@ -567,6 +567,7 @@ test('agenda: o dono marca por conversa, vê na lista, exporta para o calendári
     const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
     await fetch(`${base}/api/chat`, { method: 'POST', headers: h, body: JSON.stringify({ text: 'marca uma demonstração com a Ana amanhã às 15h30' }) });
     assert.match(t.client.requests[0].messages.at(-1).content, /Agenda dos próximos 7 dias: \[\]/);
+    assert.match(t.client.requests[0].messages.at(-1).content, /Pendências em aberto que dependem do dono: .*serviço de envio de e-mail/);
 
     const list = await (await fetch(`${base}/api/agenda`, { headers: h })).json();
     assert.equal(list.events.length, 1);
@@ -608,4 +609,17 @@ test('modelo das conversas: Sonnet fixo por padrão; a troca automática só lig
   assert.equal(loadConfig({}).router, false);
   assert.equal(loadConfig({}).model, 'claude-sonnet-5-5');
   assert.equal(loadConfig({ JARVIS_ROUTER: 'on' }).router, true);
+});
+
+test('lembretes do Guardião: nascem com as duas pendências, entram no resumo e somem quando concluídos', async () => {
+  const t = setup({ script: [use('complete_reminder', { id: 1 }), say('Anotado, senhor.')] });
+  assert.equal(t.reminders.open().length, 2);
+  assert.match(t.reminders.open()[1].text, /token da API de Marketing da Meta/);
+  t.advance(7 * 3600 * 1000);
+  const { runBriefing } = await import('../src/briefing.js');
+  const text = await runBriefing({ store: t.store, config: t.config, notifyOwner: async () => {}, reminders: t.reminders });
+  assert.match(text, /Pendente com o senhor:\n- Escolher o serviço de envio de e-mail/);
+  await t.brain.owner('já escolhi o Brevo e criei a chave');
+  assert.deepEqual(t.reminders.open().map((r) => r.id), [2]);
+  assert.equal(t.reminders.add('Mandar o logo com o nome escrito').id, 3);
 });

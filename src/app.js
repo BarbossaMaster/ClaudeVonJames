@@ -120,7 +120,7 @@ export function createJarvis({ store, config, whatsapp, speech, brain, log = con
   return { notifyOwner, ingestEvent, handleWhatsApp, sendDocumentToOwner };
 }
 
-export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files, agenda, log = console.error }) {
+export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files, agenda, reminders, log = console.error }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -348,6 +348,7 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
         documents: documents ? documents.list(200).length : 0,
         files: files ? files.list().length : 0,
         next: agenda ? agenda.next() : null,
+        reminders: reminders ? reminders.open() : [],
         rules: getRules(store, config).instructions.length,
       },
     });
@@ -370,7 +371,7 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
     '/api/briefing',
     auth,
     wrap(async (_req, res) => {
-      const text = await runBriefing({ store, config, notifyOwner: jarvis.notifyOwner, agenda, force: true });
+      const text = await runBriefing({ store, config, notifyOwner: jarvis.notifyOwner, agenda, reminders, force: true });
       res.json({ sent: true, text });
     }),
   );

@@ -153,6 +153,16 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: 'add_reminder',
+    description: 'Guarda uma pendência que depende do dono (uma decisão, um acesso, um documento a enviar), para você cobrar depois com tato.',
+    input_schema: { type: 'object', properties: { text: { type: 'string', description: 'A pendência, completa e autossuficiente.' } }, required: ['text'] },
+  },
+  {
+    name: 'complete_reminder',
+    description: 'Marca uma pendência como concluída, pelo número (#id), quando o dono disser que resolveu.',
+    input_schema: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] },
+  },
+  {
     name: 'schedule_event',
     description:
       'Marca um compromisso na agenda do dono (reunião, demonstração, retorno a cliente, prazo). Confirme dia e hora na resposta.',
@@ -232,13 +242,15 @@ const CONTACT_TOOLS = [
   },
 ];
 
-export function createBrain({ store, config, notifyOwner, sendToContact, documents, sendDocumentToOwner, files, agenda, client, log = console.error }) {
+export function createBrain({ store, config, notifyOwner, sendToContact, documents, sendDocumentToOwner, files, agenda, reminders, client, log = console.error }) {
   let anthropic = client;
   const getClient = () => (anthropic ??= new Anthropic());
 
   const days = (n) => store.now() - Math.max(0.05, Number(n) || 1) * 24 * 3600 * 1000;
 
   const ownerHandlers = (ctx) => ({
+    add_reminder: ({ text }) => { if (!reminders) throw new Error('lembretes indisponíveis'); return reminders.add(text); },
+    complete_reminder: ({ id }) => { if (!reminders) throw new Error('lembretes indisponíveis'); return { done: reminders.complete(id) }; },
     schedule_event: (input) => { if (!agenda) throw new Error('agenda indisponível'); return agenda.add(input); },
     list_agenda: ({ days }) => { if (!agenda) throw new Error('agenda indisponível'); return agenda.upcoming(Math.min(365, Number(days) || 30)); },
     cancel_event: ({ id }) => { if (!agenda) throw new Error('agenda indisponível'); return { cancelled: agenda.remove(id) }; },
@@ -514,6 +526,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
           fast: channel === 'voice' && config.fastVoice,
           // Os números do dia já vão no contexto: a pergunta mais comum dispensa uma ida e volta de ferramenta.
           context: `[Números das últimas 24 horas, já consultados agora: ${JSON.stringify(snapshot(store, config, days(1)))}. Para outros períodos ou detalhes, use as ferramentas.]` +
+            (reminders && reminders.open().length ? `\n[Pendências em aberto que dependem do dono: ${JSON.stringify(reminders.open())}. Lembre-o delas quando a conversa der abertura, em uma frase e no máximo uma vez por conversa; não repita se ele já respondeu sobre isso.]` : '') +
             (agenda ? `\n[Agenda dos próximos 7 dias: ${JSON.stringify(agenda.upcoming(7, 30).map((e) => ({ id: e.id, quando: e.when, titulo: e.title })))}]` : ''),
         });
         meta.ms = Date.now() - t0;
