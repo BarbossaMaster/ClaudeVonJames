@@ -205,10 +205,12 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
       const channel = req.body?.channel === 'voice' ? 'voice' : 'text';
       const created = [];
       const meta = {};
-      const reply = await brain.owner(text.slice(0, 4000), { channel, documents: created, meta });
+      const screen = req.body?.screen && typeof req.body.screen === 'object' ? req.body.screen : null;
+      const reply = await brain.owner(text.slice(0, 4000), { channel, documents: created, meta, screen });
       res.json({
         reply,
         documents: created,
+        actions: meta.actions ?? [], // comandos de tela que o app executa com o feixe
         model: meta.model,
         trace: { model: meta.model, ms: meta.ms, routeMs: meta.routeMs, steps: meta.steps, tools: meta.tools, tokensIn: meta.tokensIn, tokensOut: meta.tokensOut },
       });

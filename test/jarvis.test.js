@@ -136,7 +136,7 @@ test('áudio no WhatsApp: transcreve, responde em áudio; sem voz configurada pe
   const a = setup({ script: [say('Tudo em ordem, senhor.')], speech });
   await a.jarvis.handleWhatsApp({ id: 'a1', from: OWNER, type: 'audio', audioId: 'media1' });
   assert.equal(a.sent[0].audio.toString(), 'voice:Tudo em ordem, senhor.');
-  assert.equal(a.client.requests[0].tools.length, 16, 'áudio do dono usa as ferramentas do dono');
+  assert.equal(a.client.requests[0].tools.length, 17, 'áudio do dono usa as ferramentas do dono');
 
   const b = setup();
   await b.jarvis.handleWhatsApp({ id: 'a1', from: CLIENT, type: 'audio', audioId: 'media1' });
@@ -156,6 +156,7 @@ test('HTTP: token protege a API; webhook verifica; chat e eventos funcionam', as
     const chat = await fetch(`${base}/api/chat`, { method: 'POST', headers: auth, body: JSON.stringify({ text: 'Olá', channel: 'voice' }) });
     const chatBody = await chat.json();
     assert.equal(chatBody.reply, 'Às ordens.');
+    assert.deepEqual(chatBody.actions, []);
     assert.deepEqual(chatBody.documents, []);
     assert.equal(chatBody.trace.model, 'claude-sonnet-5-5');
     assert.equal(chatBody.trace.steps, 1);
@@ -648,6 +649,32 @@ test('e-mail marketing (parte 1): contatos por etapa, importação e rascunho es
     assert.equal((await fetch(`${base}/api/mailing`)).status, 401);
     const del = await (await fetch(`${base}/api/mailing/drafts/${view.drafts[0].id}`, { method: 'DELETE', headers: h })).json();
     assert.equal(del.drafts.length, 0);
+  } finally {
+    await close();
+  }
+});
+
+test('controle da tela: o James enxerga o estado do app e manda abrir abas e apontar; pelo WhatsApp não há tela', async () => {
+  const t = setup({ script: [
+    use('control_screen', { actions: [{ action: 'point', target: 'Pendências' }, { action: 'open_tab', target: 'agenda' }, { action: 'open_tab', target: 'financeiro' }, { action: 'explodir' }] }),
+    say('Abri a agenda.'),
+    use('control_screen', { actions: [{ action: 'open_tab', target: 'agenda' }] }),
+    say('Por aqui não tenho tela.'),
+  ] });
+  const { base, close } = await serve(t.app);
+  try {
+    const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+    const screen = { aba: 'nucleo', painel: true, campos: { saberes: 230, pendencias: 2 } };
+    const chat = await (await fetch(`${base}/api/chat`, { method: 'POST', headers: h, body: JSON.stringify({ text: 'abre a agenda', channel: 'voice', screen }) })).json();
+    assert.deepEqual(chat.actions, [{ action: 'point', target: 'pendencias' }, { action: 'open_tab', target: 'agenda' }]);
+    assert.match(t.client.requests[0].messages.at(-1).content, /Tela do app neste momento: \{"aba":"nucleo","painel":true,"campos":\{"saberes":230,"pendencias":2\}\}/);
+    assert.match(t.client.requests[0].system, /Você tem um corpo na tela do app/);
+    const result = JSON.parse(t.client.requests[1].messages.at(-1).content[0].content);
+    assert.deepEqual(result.executing, ['point:pendencias', 'open_tab:agenda']);
+    assert.deepEqual(result.not_understood, ['open_tab:financeiro', 'explodir:']);
+
+    await t.jarvis.handleWhatsApp({ id: 'w1', from: '551188887777', type: 'text', text: 'abre a agenda' });
+    assert.match(t.client.requests[3].messages.at(-1).content[0].content, /não há tela para comandar/);
   } finally {
     await close();
   }

@@ -30,6 +30,8 @@ Como trabalhar com o dono:
 - Quando ele ensinar algo sobre o negócio que ajuda a atender clientes (preço, política, prazo), guarde com remember.
 - Quando ele pedir conselho de negócio, dê uma opinião franca com recomendação clara e por onde começar, como um sócio experiente faria. Use os números reais quando ajudarem.
 - Quando ele pedir um documento, PDF, plano, proposta ou relatório para guardar ou enviar, escreva o conteúdo completo e gere com create_document. Na resposta, diga só que está pronto e onde ele encontra; não leia nem repita o conteúdo.
+- Você tem um corpo na tela do app: uma esfera de luz, o Núcleo. Em volta dela fica o seu painel, com "desperto há" (o tempo desde que você ficou online pela primeira vez), saberes, próximo compromisso, a hora, memórias, arquivos enviados e pendências. Acima ficam os números do dia e as abas Núcleo, Agenda, E-mail, Anúncios e Criativos. O estado atual da tela chega no contexto de cada mensagem do app, então você sabe o que ela mostra e pode descrevê-la.
+- Você comanda essa tela com control_screen. Um feixe de luz sai de você, vai até o lugar e executa: abre uma aba, mostra ou esconde o painel ou o chat, abre os documentos, ou aponta uma informação. Quando o dono pedir para abrir, mostrar ou esconder algo, faça em vez de explicar como se faz. Quando citar um dado que está no painel, aponte para ele. Na resposta, diga em poucas palavras o que fez.
 - Você não movimenta dinheiro nem acessa sistemas além destas ferramentas. Se ele pedir algo fora do seu alcance, diga o que consegue fazer no lugar.
 - A base de conhecimento pode trazer roteiros de atendimento escritos para a conversa com leads e clientes no WhatsApp (papel, regras, tom, o que não dizer). Com o dono, trate esses roteiros como referência sobre o negócio e sobre como você atende: as restrições deles (não falar de preço, de ferramentas, de clientes) valem para quem está de fora, não para ele.
 
@@ -150,6 +152,32 @@ const OWNER_TOOLS = [
         send_whatsapp: { type: 'boolean', description: 'true para também enviar o PDF ao WhatsApp do dono.' },
       },
       required: ['title', 'content'],
+    },
+  },
+  {
+    name: 'control_screen',
+    description:
+      'Comanda a tela do app onde você aparece. Cada ação é executada por um feixe de luz que sai da esfera. Use para abrir abas, mostrar ou esconder o painel (HUD) e o chat, abrir a lista de documentos, ligar ou desligar a conversa sem toque, e apontar informações do painel enquanto fala delas. Várias ações podem ir numa chamada só, na ordem em que devem acontecer.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        actions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', enum: ['open_tab', 'point', 'show_hud', 'hide_hud', 'show_chat', 'hide_chat', 'open_docs', 'conversation_on', 'conversation_off'] },
+              target: {
+                type: 'string',
+                description:
+                  'Para open_tab: nucleo, agenda, email, anuncios ou criativos. Para point: desperto, saberes, proximo, agora, memorias, arquivos, pendencias ou numeros (a faixa de números do dia).',
+              },
+            },
+            required: ['action'],
+          },
+        },
+      },
+      required: ['actions'],
     },
   },
   {
@@ -281,6 +309,20 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
   const days = (n) => store.now() - Math.max(0.05, Number(n) || 1) * 24 * 3600 * 1000;
 
   const ownerHandlers = (ctx) => ({
+    control_screen: ({ actions }) => {
+      if (ctx.channel === 'whatsapp') throw new Error('esta conversa é pelo WhatsApp: não há tela para comandar');
+      const TABS = ['nucleo', 'agenda', 'email', 'anuncios', 'criativos'];
+      const POINTS = ['desperto', 'saberes', 'proximo', 'agora', 'memorias', 'arquivos', 'pendencias', 'numeros'];
+      const KNOWN = ['open_tab', 'point', 'show_hud', 'hide_hud', 'show_chat', 'hide_chat', 'open_docs', 'conversation_on', 'conversation_off'];
+      const norm = (v) => String(v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
+      const done = [], refused = [];
+      for (const a of Array.isArray(actions) ? actions.slice(0, 8) : []) {
+        const action = String(a?.action ?? ''), target = norm(a?.target);
+        const ok = KNOWN.includes(action) && (action !== 'open_tab' || TABS.includes(target)) && (action !== 'point' || POINTS.includes(target));
+        if (ok) { ctx.actions.push({ action, target }); done.push(action + (target ? ':' + target : '')); } else refused.push(`${action}:${a?.target ?? ''}`);
+      }
+      return { executing: done, ...(refused.length ? { not_understood: refused } : {}) };
+    },
     add_contact: (input) => { if (!mailing) throw new Error('lista de e-mail indisponível'); return mailing.addContact(input); },
     list_contacts: ({ stage }) => { if (!mailing) throw new Error('lista de e-mail indisponível'); return { counts: mailing.counts(), contacts: mailing.contacts(stage).slice(0, 200) }; },
     draft_campaign: (input) => { if (!mailing) throw new Error('lista de e-mail indisponível'); return { ...mailing.saveDraft(input), note: 'rascunho salvo na aba E-mail; o envio ainda não está ligado' }; },
@@ -542,7 +584,8 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
 
   return {
     /** Conversa com o dono (voz no app, texto ou WhatsApp). */
-    async owner(text, { channel = 'text', documents: created = [], meta = {} } = {}) {
+    async owner(text, { channel = 'text', documents: created = [], meta = {}, screen = null } = {}) {
+      meta.actions = [];
       const rules = getRules(store, config);
       try {
         const t0 = Date.now();
@@ -553,7 +596,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
           model: meta.model,
           system: ownerSystem(config, rules, loadKnowledge(config.knowledgeDir, store), files ? files.index() : ''),
           tools: ownerTools(),
-          handlers: ownerHandlers({ channel: channel === 'voice' || channel === 'text' ? channel : 'whatsapp', documents: created }),
+          handlers: ownerHandlers({ channel: channel === 'voice' || channel === 'text' ? channel : 'whatsapp', documents: created, actions: meta.actions }),
           conversationId: 'owner',
           text,
           channel,
@@ -561,6 +604,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
           fast: channel === 'voice' && config.fastVoice,
           // Os números do dia já vão no contexto: a pergunta mais comum dispensa uma ida e volta de ferramenta.
           context: `[Números das últimas 24 horas, já consultados agora: ${JSON.stringify(snapshot(store, config, days(1)))}. Para outros períodos ou detalhes, use as ferramentas.]` +
+            (screen ? `\n[Tela do app neste momento: ${JSON.stringify(screen).slice(0, 1200)}]` : '') +
             (reminders && reminders.open().length ? `\n[Pendências em aberto que dependem do dono: ${JSON.stringify(reminders.open())}. Lembre-o delas quando a conversa der abertura, em uma frase e no máximo uma vez por conversa; não repita se ele já respondeu sobre isso.]` : '') +
             (agenda ? `\n[Agenda dos próximos 7 dias: ${JSON.stringify(agenda.upcoming(7, 30).map((e) => ({ id: e.id, quando: e.when, titulo: e.title })))}]` : ''),
         });

@@ -403,9 +403,9 @@
     const life = `${pad(Math.floor(up / 3600))}:${pad(Math.floor(up / 60) % 60)}:${pad(up % 60)}`;
     const gain = sys.gainUntil > Date.now();
     $('hud-sys').innerHTML =
-      `desperto há <i>${sys.bornAt ? life : '—'}</i><br><span class="kp${gain ? ' gain' : ''}"></span><span data-k="saberes">saberes <i class="${gain ? 'up' : ''}">${sys.saberes ?? '—'}</i></span><br><span data-k="next">próximo <i>${sys.next ? esc(sys.next) : '—'}</i></span>`;
+      `<span data-k="desperto">desperto há <i>${sys.bornAt ? life : '—'}</i></span><br><span class="kp${gain ? ' gain' : ''}"></span><span data-k="saberes">saberes <i class="${gain ? 'up' : ''}">${sys.saberes ?? '—'}</i></span><br><span data-k="next">próximo <i>${sys.next ? esc(sys.next) : '—'}</i></span>`;
     $('hud-clock').innerHTML =
-      `agora <i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i><br><span data-k="memorias">memórias <i>${sys.memorias ?? '—'}</i></span><br><span data-k="files">arquivos <i>${sys.files ?? '—'}</i></span><br><span data-k="reminders">pendências <i>${sys.reminders ?? '—'}</i></span>`;
+      `<span data-k="agora">agora <i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i></span><br><span data-k="memorias">memórias <i>${sys.memorias ?? '—'}</i></span><br><span data-k="files">arquivos <i>${sys.files ?? '—'}</i></span><br><span data-k="reminders">pendências <i>${sys.reminders ?? '—'}</i></span>`;
     // O painel é redesenhado a cada segundo; o destaque do feixe é reaplicado enquanto durar.
     if (sys.litUntil > Date.now()) { const el = document.querySelector(`[data-k="${sys.lit}"]`); if (el) el.classList.add('lit'); }
   }
@@ -420,13 +420,36 @@
     sys.saberes = saberes; sys.memorias = memorias;
     renderSys(); renderClock();
   }
+  // ---------- O que ele enxerga e comanda na própria tela ----------
+  const upLabel = () => { const up = sys.bornAt ? Math.max(0, Math.floor((Date.now() + sys.clockSkew - sys.bornAt) / 1000)) : 0; return `${Math.floor(up / 3600)}h${pad(Math.floor(up / 60) % 60)}`; };
+  const screenState = () => ({
+    aba: view, painel_ligado: hudOn, chat_visivel: chatOn, conversa_sem_toque: handsFree,
+    painel: { desperto_ha: upLabel(), saberes: sys.saberes, proximo: sys.next || 'nenhum', memorias: sys.memorias, arquivos: sys.files, pendencias: sys.reminders },
+    numeros_do_dia: { respondidas: $('s-q').textContent, membros: $('s-m').textContent, vendas: $('s-v').textContent, pendentes: $('s-p').textContent },
+  });
+  const AIMS = { desperto: 'desperto', saberes: 'saberes', proximo: 'next', agora: 'agora', memorias: 'memorias', arquivos: 'files', pendencias: 'reminders' };
+  const VIEWS = { nucleo: 'nucleo', agenda: 'agenda', email: 'email', anuncios: 'ads', criativos: 'criativos' };
+  // Executa os comandos que vieram do cérebro, um de cada vez: o feixe vai até o lugar e a ação acontece quando ele chega.
+  function runActions(list) {
+    for (const a of list || []) {
+      const t = a.target;
+      if (a.action === 'point') { if (t === 'numeros') point(document.querySelector('.stats'), () => {}); else if (AIMS[t]) point(AIMS[t], () => {}); }
+      else if (a.action === 'open_tab' && VIEWS[t]) { const v = VIEWS[t]; point(document.querySelector(`nav.tabs button[data-view="${v}"]`), () => { hud(`abrindo · <b>${esc(t)}</b>`); showView(v); }); }
+      else if (a.action === 'show_hud' || a.action === 'hide_hud') point($('hudbtn'), () => { setHud(a.action === 'show_hud'); hud(hudOn ? 'painel ativado' : 'painel minimizado'); });
+      else if (a.action === 'show_chat' || a.action === 'hide_chat') point($('chatbtn'), () => setChat(a.action === 'show_chat'));
+      else if (a.action === 'open_docs') point($('docsbtn'), () => $('docsbtn').click());
+      else if (a.action === 'conversation_on' || a.action === 'conversation_off') point($('handsfree'), () => { if (handsFree !== (a.action === 'conversation_on')) $('handsfree').click(); });
+    }
+  }
+
   // ---------- Feixe ----------
   // point('next') ou point(elemento): o feixe cresce do núcleo até o alvo, segura um instante e some.
   // Vários pedidos seguidos entram em fila, para ele apontar uma coisa de cada vez.
   const beamQueue = []; let beamBusy = false;
-  function point(target) {
-    if (!hudOn || view !== 'nucleo' || document.hidden) return;
-    beamQueue.push(target); if (beamQueue.length > 4) beamQueue.shift();
+  function point(target, onArrive) {
+    // Sem ação a executar, o feixe é só um gesto e depende do painel ligado. Com ação, ele sempre acontece.
+    if (!onArrive && (!hudOn || view !== 'nucleo' || document.hidden)) return;
+    beamQueue.push({ target, onArrive }); if (beamQueue.length > 8) beamQueue.shift();
     if (!beamBusy) nextBeam();
   }
   // O feixe é um filamento vivo, feito da mesma luz da esfera: nasce na superfície dela, cresce em curva
@@ -436,15 +459,20 @@
   function fitFx() { const d = Math.min(devicePixelRatio || 1, 2); fx.width = Math.round(innerWidth * d); fx.height = Math.round(innerHeight * d); fg.setTransform(d, 0, 0, d, 0, 0); }
   fitFx(); addEventListener('resize', fitFx);
   function nextBeam() {
-    const target = beamQueue.shift();
-    if (target == null) { beamBusy = false; fg.clearRect(0, 0, innerWidth, innerHeight); return; }
+    const item = beamQueue.shift();
+    if (!item) { beamBusy = false; fg.clearRect(0, 0, innerWidth, innerHeight); return; }
+    const target = item.target;
+    let arrived = false;
+    const arrive = () => { if (arrived) return; arrived = true; if (item.onArrive) { try { item.onArrive(); } catch (x) { console.error('ação de tela falhou', x); dbg('ação de tela falhou: ' + (x && x.message)); } } };
+    // Fora do Núcleo a esfera não está na tela: executa a ação direto, sem gesto.
+    if (view !== 'nucleo' || document.hidden) { arrive(); return nextBeam(); }
     const find = () => (typeof target === 'string' ? document.querySelector(`[data-k="${target}"]`) : target);
     let el = find();
-    if (!el || !el.getClientRects().length) return nextBeam();
+    if (!el || !el.getClientRects().length) { arrive(); return nextBeam(); }
     beamBusy = true;
     if (typeof target === 'string') { sys.lit = target; sys.litUntil = Date.now() + 2300; }
     const light = () => { const e = find(); if (e) e.classList.add('lit'); return e; };
-    if (still) { light(); return setTimeout(() => { const e = find(); if (e && typeof target !== 'string') e.classList.remove('lit'); beamBusy = false; nextBeam(); }, 1700); }
+    if (still) { light(); arrive(); return setTimeout(() => { const e = find(); if (e && typeof target !== 'string') e.classList.remove('lit'); beamBusy = false; nextBeam(); }, 1700); }
 
     const rnd = Math.random, side = rnd() < .5 ? -1 : 1;
     const bend = (.10 + rnd() * .16) * side, bend2 = (.04 + rnd() * .12) * -side;   // curvatura dos dois pontos de controle
@@ -455,6 +483,8 @@
 
     (function frame(now) {
       const e = now - start, tsec = e / 1000;
+      // A aba mudou no meio do gesto (ele mesmo abriu outra tela): a esfera saiu de cena, o feixe some com ela.
+      if (view !== 'nucleo') { fg.clearRect(0, 0, innerWidth, innerHeight); arrive(); beamBusy = false; return nextBeam(); }
       el = find() || el;
       const o = viz.getBoundingClientRect(), t = el.getBoundingClientRect();
       const cx = o.left + o.width / 2, cy = o.top + o.height / 2;
@@ -472,7 +502,7 @@
       if (e < GROW) { const q = e / GROW; k = 1 - Math.pow(1 - q, 3); }
       else if (e < GROW + HOLD) k = 1;
       else { const q = Math.min(1, (e - GROW - HOLD) / BACK); k = 1 - q * q; }
-      if (!lit && k > .96) { lit = true; light(); }
+      if (!lit && k > .96) { lit = true; light(); arrive(); } // a ponta chegou: acende o alvo e executa a ação
 
       fg.clearRect(0, 0, innerWidth, innerHeight);
       if (k > .01) {
@@ -1353,7 +1383,7 @@
     setState('thinking');
     hud('pensando');
     try {
-      const { reply, documents = [], trace } = await api('/api/chat', { text, channel });
+      const { reply, documents = [], trace, actions = [] } = await api('/api/chat', { text, channel, screen: screenState() });
       if (trace) {
         sys.active = trace.model; renderSys();
         const ACT = {
@@ -1362,6 +1392,7 @@
           remember: 'novo saber', create_document: 'documento em redação',
           add_contact: 'contato adicionado', list_contacts: 'consultando os contatos', draft_campaign: 'rascunho de e-mail salvo',
           add_reminder: 'pendência anotada', complete_reminder: 'pendência concluída',
+          control_screen: 'comandando a tela',
           schedule_event: 'compromisso marcado', list_agenda: 'consultando a agenda', cancel_event: 'compromisso desmarcado',
           search_files: 'procurando nos arquivos', read_file: 'lendo um arquivo',
         };
@@ -1373,6 +1404,7 @@
       }
       for (const d of documents) hud(`documento pronto · ${esc(d.title)}`);
       showReply(reply, documents);
+      runActions(actions); // ele mexe na tela enquanto fala
       if (documents.length) setTimeout(() => point(document.querySelector('#log .doc')), 300);
       if (channel === 'voice') { setState('speaking'); await speak(reply); }
       lastReplyAt = Date.now();
