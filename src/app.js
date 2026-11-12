@@ -120,10 +120,11 @@ export function createJarvis({ store, config, whatsapp, speech, brain, log = con
   return { notifyOwner, ingestEvent, handleWhatsApp, sendDocumentToOwner };
 }
 
-export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, log = console.error }) {
+export function createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files, log = console.error }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => (req.rawBody = buf) }));
+  const fileBody = express.raw({ type: () => true, limit: '25mb' });
   const wavBody = express.raw({ type: ['audio/wav', 'audio/x-wav', 'audio/wave'], limit: '12mb' });
 
   // Momento em que o assistente ficou online pela primeira vez; fica gravado e nunca mais muda.
@@ -142,7 +143,9 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
       .split('\n')
       .filter((l) => { const t = l.trim(); return t.length > 3 && !/^(#|>|---)/.test(t); }).length;
     const c = store.counts();
-    return { saberes: facts + getRules(store, config).instructions.length, memorias: c.turns + c.events };
+    // Cada arquivo enviado conta como saber, na proporção do texto que tem (um a cada 400 caracteres).
+    const fromFiles = files ? files.list().reduce((n, f) => n + Math.max(1, Math.round(f.chars / 400)), 0) : 0;
+    return { saberes: facts + fromFiles + getRules(store, config).instructions.length, memorias: c.turns + c.events };
   };
 
   const auth = (req, res, next) => {
@@ -228,6 +231,30 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
       res.json({ text, speaker, ms: Date.now() - t0 });
     }),
   );
+
+  // Arquivos do dono: enviar (o corpo é o próprio arquivo; o nome vem no cabeçalho x-filename), listar e apagar.
+  // Ficam só no modo dono: o atendimento a clientes não enxerga esse material.
+  app.get('/api/files', auth, (_req, res) => res.json({ files: files ? files.list() : [] }));
+  app.post(
+    '/api/files',
+    auth,
+    fileBody,
+    wrap(async (req, res) => {
+      if (!files) return res.status(503).json({ error: 'arquivos indisponíveis' });
+      if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'arquivo vazio' });
+      let name = 'arquivo';
+      try { name = decodeURIComponent(req.get('x-filename') || 'arquivo'); } catch { /* nome ilegível: usa o padrão */ }
+      try {
+        res.status(201).json(await files.add(req.body, name, req.get('x-filetype') || req.get('content-type') || ''));
+      } catch (e) {
+        res.status(422).json({ error: e.message });
+      }
+    }),
+  );
+  app.delete('/api/files/:id', auth, (req, res) => {
+    files?.remove(req.params.id);
+    res.json({ files: files ? files.list() : [] });
+  });
 
   // Impressão vocal: gravar amostras, consultar e apagar.
   app.get('/api/voiceprint', auth, (_req, res) => res.json(voiceprints ? voiceprints.status() : { available: false, people: [] }));

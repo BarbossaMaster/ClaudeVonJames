@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS turns (
 CREATE INDEX IF NOT EXISTS turns_contact ON turns(contact, id);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, title TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, name TEXT NOT NULL, mime TEXT, pages INTEGER, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, ts INTEGER NOT NULL);
 `;
 
@@ -142,6 +143,21 @@ export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
 
     listDocuments(limit = 30) {
       return db.prepare('SELECT * FROM documents ORDER BY ts DESC, rowid DESC LIMIT ?').all(limit);
+    },
+
+    addFile(f) {
+      db.prepare('INSERT INTO files (id, ts, name, mime, pages, text) VALUES (?,?,?,?,?,?)').run(f.id, now(), f.name, f.mime, f.pages, f.text);
+    },
+    getFile(id) {
+      return db.prepare('SELECT * FROM files WHERE id = ?').get(String(id));
+    },
+    listFiles() {
+      return db
+        .prepare("SELECT id, ts, name, pages, LENGTH(text) AS chars, REPLACE(SUBSTR(text, 1, 160), char(10), ' ') AS preview FROM files ORDER BY ts DESC, rowid DESC")
+        .all();
+    },
+    removeFile(id) {
+      db.prepare('DELETE FROM files WHERE id = ?').run(String(id));
     },
 
     /** Data do registro mais antigo guardado (fala, evento ou documento), ou null se não há nenhum. */

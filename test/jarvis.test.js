@@ -136,7 +136,7 @@ test('áudio no WhatsApp: transcreve, responde em áudio; sem voz configurada pe
   const a = setup({ script: [say('Tudo em ordem, senhor.')], speech });
   await a.jarvis.handleWhatsApp({ id: 'a1', from: OWNER, type: 'audio', audioId: 'media1' });
   assert.equal(a.sent[0].audio.toString(), 'voice:Tudo em ordem, senhor.');
-  assert.equal(a.client.requests[0].tools.length, 6, 'áudio do dono usa as ferramentas do dono');
+  assert.equal(a.client.requests[0].tools.length, 8, 'áudio do dono usa as ferramentas do dono');
 
   const b = setup();
   await b.jarvis.handleWhatsApp({ id: 'a1', from: CLIENT, type: 'audio', audioId: 'media1' });
@@ -511,4 +511,51 @@ test('WhatsApp: envio recusado para número brasileiro tenta o outro formato do 
   await wa.sendText('553188887777', 'oi');
   assert.deepEqual(tried, ['553188887777', '5531988887777']);
   await assert.rejects(() => wa.sendText('14155550100', 'oi'), /131030/, 'número de outro país não tem segunda tentativa');
+});
+
+test('arquivos do dono: envia, o James busca e lê; cliente não enxerga; PDF vira texto', async () => {
+  const t = setup({ script: [use('search_files', { query: 'multa rescisão' }), say('A multa é de dois meses.'), say('Olá!')] });
+  const { base, close } = await serve(t.app);
+  try {
+    const auth = { Authorization: 'Bearer segredo' };
+    const up = (body, name, type) => fetch(`${base}/api/files`, { method: 'POST', headers: { ...auth, 'Content-Type': type, 'x-filename': encodeURIComponent(name) }, body });
+    const contrato = 'Contrato de prestação de serviços.\n\nCláusula 7. Em caso de rescisão antecipada, a multa é de dois meses de mensalidade.\n' + 'Demais condições gerais. '.repeat(40);
+    const r = await up(contrato, 'contrato açaí.txt', 'text/plain');
+    assert.equal(r.status, 201);
+    const file = await r.json();
+    assert.equal(file.name, 'contrato açaí.txt');
+
+    // formatos não aceitos e arquivo vazio são recusados com explicação; sem token, nada entra
+    assert.equal((await up(Buffer.from([1, 2, 3, 4]), 'foto.png', 'image/png')).status, 422);
+    assert.equal((await fetch(`${base}/api/files`, { method: 'POST', body: 'x' })).status, 401);
+
+    // PDF de verdade: gera um com o próprio gerador e manda de volta
+    const { renderPdf } = await import('../src/documents.js');
+    const pdf = await renderPdf({ title: 'Tabela', content: 'O plano completo custa novecentos reais por mês.', business: 'Astro Gold', dateLabel: 'hoje' });
+    const p = await (await up(pdf, 'tabela.pdf', 'application/pdf')).json();
+    assert.equal(p.pages, 1);
+    assert.match(t.files.read(p.id).text, /novecentos reais/);
+
+    // o dono pergunta: o índice vai no prompt e a busca devolve o trecho certo
+    const chat = await (await fetch(`${base}/api/chat`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'qual a multa de rescisão?' }) })).json();
+    assert.equal(chat.reply, 'A multa é de dois meses.');
+    assert.match(t.client.requests[0].system, new RegExp(`\\[${file.id}\\] contrato açaí\\.txt`));
+    const found = JSON.parse(t.client.requests[1].messages.at(-1).content[0].content);
+    assert.equal(found[0].id, file.id);
+    assert.match(found[0].snippet, /multa é de dois meses/);
+
+    // cliente no WhatsApp: sem índice e sem ferramentas de arquivo
+    await t.brain.contact('qual a multa de vocês?', { contact: '5521999990000' });
+    const lead = t.client.requests[2];
+    assert.doesNotMatch(lead.system, /contrato açaí/);
+    assert.deepEqual(lead.tools.map((x) => x.name), ['escalate_to_owner']);
+
+    // listar e apagar
+    const list = await (await fetch(`${base}/api/files`, { headers: auth })).json();
+    assert.equal(list.files.length, 2);
+    const del = await (await fetch(`${base}/api/files/${file.id}`, { method: 'DELETE', headers: auth })).json();
+    assert.deepEqual(del.files.map((f) => f.name), ['tabela.pdf']);
+  } finally {
+    await close();
+  }
 });

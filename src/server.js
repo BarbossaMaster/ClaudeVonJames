@@ -7,6 +7,7 @@ import { createApp, createJarvis } from './app.js';
 import { startScheduler } from './briefing.js';
 import { createDocuments } from './documents.js';
 import { createVoiceprints } from './voiceprint.js';
+import { createFiles } from './files.js';
 import { dirname, join } from 'node:path';
 
 const config = loadConfig();
@@ -23,6 +24,7 @@ const documents = createDocuments({
   dir: config.dbPath === ':memory:' ? ':memory:' : join(dirname(config.dbPath), 'docs'),
 });
 const voiceprints = createVoiceprints({ store, config });
+const files = createFiles({ store });
 if (speech.enabled && config.serverListen) voiceprints.warm();
 const links = {};
 const brain = createBrain({
@@ -32,11 +34,12 @@ const brain = createBrain({
   sendToContact: (to, text) => whatsapp.sendText(to, text),
   documents,
   sendDocumentToOwner: (doc) => links.jarvis.sendDocumentToOwner(doc),
+  files,
 });
 const jarvis = createJarvis({ store, config, whatsapp, speech, brain });
 links.jarvis = jarvis;
 
-const app = createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints });
+const app = createApp({ store, config, whatsapp, speech, brain, jarvis, documents, voiceprints, files });
 startScheduler({ store, config, notifyOwner: jarvis.notifyOwner });
 
 app.listen(config.port, () => {

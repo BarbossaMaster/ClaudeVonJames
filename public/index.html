@@ -72,6 +72,9 @@
   .doc span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc small { color: var(--muted); flex: none; }
   .doc .share { flex: none; width: 46px; display: grid; place-items: center; border-left: 1px solid var(--faint); }
+  #filelist { display: flex; flex-direction: column; gap: 6px; max-height: 26dvh; overflow-y: auto; }
+  #filelist .doc { max-width: 100%; align-self: stretch; }
+  #filelist .doc > span { flex: 1; min-width: 0; padding: 10px 14px; display: flex; gap: 10px; align-items: center; }
   #doclist { display: flex; flex-direction: column; gap: 8px; max-height: 50dvh; overflow-y: auto; }
   #doclist .doc { max-width: 100%; align-self: stretch; }
   .close { margin-top: 16px; color: var(--muted); font-size: 13px; }
@@ -226,6 +229,13 @@
 
 <dialog id="docs">
   <h2>Documentos</h2>
+  <p style="color:var(--text);margin-bottom:6px">Enviados por você</p>
+  <p id="filesempty">Nenhum arquivo enviado. Mande contratos, planilhas, propostas e relatórios para ele consultar.</p>
+  <div id="filelist"></div>
+  <input type="file" id="filepick" multiple hidden accept=".pdf,.txt,.md,.csv,.tsv,.json,.xml,.html,.log,.yaml,.yml,application/pdf,text/*">
+  <button class="close" id="fileadd" style="color:var(--green);margin-top:10px">+ Enviar arquivos (PDF ou texto)</button>
+  <div class="err" id="fileerr"></div>
+  <p style="color:var(--text);margin:14px 0 6px">Gerados por ele</p>
   <p id="docsempty">Nenhum documento ainda. Peça um PDF ao assistente.</p>
   <div id="doclist"></div>
   <button class="close" id="docsclose">Fechar</button>
@@ -741,7 +751,10 @@
   function envelopeOf(buffer) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return Promise.reject(new Error('sem AudioContext'));
-    decodeCtx ||= new AC();
+    // Contexto offline: só decodifica, não ocupa a saída de som do aparelho. Um contexto ao vivo aberto
+    // aqui fazia o Safari parar de entregar o microfone ao reconhecimento de voz depois da primeira resposta.
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    decodeCtx ||= OAC ? new OAC(1, 2, 44100) : new AC();
     return new Promise((res, rej) => {
       // Navegadores novos também devolvem uma promessa; ela é silenciada para a falha não aparecer duas vezes.
       const pr = decodeCtx.decodeAudioData(buffer, res, rej);
@@ -1187,8 +1200,43 @@
     btn.textContent = 'Gravar'; btn.disabled = false;
     if (wasOn) setHandsFree(true, true);
   });
+  // Arquivos enviados pelo dono: lista, envio e remoção.
+  function renderFiles(list) {
+    $('filesempty').hidden = list.length > 0;
+    $('filelist').replaceChildren(...list.map((f) => {
+      const box = document.createElement('div'); box.className = 'doc';
+      const main = document.createElement('span'); main.innerHTML = DOC_ICON;
+      const name = document.createElement('span'); name.textContent = f.name; main.appendChild(name);
+      const size = document.createElement('small'); size.textContent = f.pages ? f.pages + ' pág.' : Math.max(1, Math.round(f.chars / 1000)) + ' mil car.'; main.appendChild(size);
+      const del = document.createElement('button'); del.className = 'share'; del.textContent = '×'; del.setAttribute('aria-label', 'Apagar ' + f.name);
+      del.addEventListener('click', async () => {
+        try { const r = await fetch('/api/files/' + encodeURIComponent(f.id), { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } }); renderFiles((await r.json()).files); hud('arquivo removido'); refresh(); } catch {}
+      });
+      box.append(main, del);
+      return box;
+    }));
+  }
+  $('fileadd').addEventListener('click', () => $('filepick').click());
+  $('filepick').addEventListener('change', async (e) => {
+    const picked = [...e.target.files]; e.target.value = '';
+    const err = $('fileerr'); err.textContent = '';
+    for (const file of picked) {
+      $('fileadd').textContent = 'Enviando ' + file.name + '…';
+      try {
+        if (file.size > 25 * 1024 * 1024) throw new Error('passa de 25 MB');
+        const res = await fetch('/api/files', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/octet-stream', 'x-filename': encodeURIComponent(file.name), 'x-filetype': file.type || '' }, body: file });
+        const r = await res.json();
+        if (!res.ok) throw new Error(r.error || 'falhou');
+        hud(`arquivo recebido · <b>${esc(r.name)}</b>`);
+      } catch (x) { err.textContent = `${file.name}: ${(x && x.message) || 'erro'}`; }
+    }
+    $('fileadd').textContent = '+ Enviar arquivos (PDF ou texto)';
+    try { renderFiles((await api('/api/files')).files); } catch {}
+    refresh(); // os saberes sobem com o material novo
+  });
   $('docsbtn').addEventListener('click', async () => {
     $('docs').showModal();
+    try { renderFiles((await api('/api/files')).files); } catch {}
     try {
       const { documents } = await api('/api/docs');
       $('docsempty').hidden = documents.length > 0;

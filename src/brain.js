@@ -15,7 +15,7 @@ const CHANNEL_STYLE = {
   text: 'Responda de forma breve, em texto simples.',
 };
 
-function ownerSystem(config, rules, knowledge) {
+function ownerSystem(config, rules, knowledge, fileIndex = '') {
   const a = config.assistantName;
   return `Você é ${a}, o assistente de IA que opera ${config.businessName} em nome de ${config.ownerName}. Nesta conversa você fala diretamente com ${config.ownerName}, o dono; trate-o por "${config.ownerTitle}".
 
@@ -38,7 +38,10 @@ Regras atuais do dono:
 ${rules.instructions.length ? rules.instructions.map((i) => `- ${i}`).join('\n') : '- (nenhuma instrução permanente adicional)'}
 
 Base de conhecimento do negócio:
-${knowledge || '(vazia — o dono ainda não enviou material)'}`;
+${knowledge || '(vazia — o dono ainda não enviou material)'}
+
+Arquivos enviados pelo dono (material interno dele; consulte com search_files e read_file antes de responder sobre o conteúdo, e cite de qual arquivo veio):
+${fileIndex || '(nenhum arquivo enviado)'}`;
 }
 
 function contactSystem(config, rules, knowledge) {
@@ -150,6 +153,29 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: 'search_files',
+    description:
+      'Procura por palavras nos arquivos que o dono enviou (contratos, planilhas, propostas, relatórios) e devolve os trechos onde aparecem. Use quando a pergunta puder estar respondida no material dele.',
+    input_schema: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'Palavras a procurar, como um nome, um valor ou um assunto.' } },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_file',
+    description:
+      'Lê um trecho de um arquivo enviado pelo dono, pelo id que aparece no índice ou na busca. Devolve até 12 mil caracteres por vez; use "from" para continuar de onde parou.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        from: { type: 'number', description: 'Posição inicial em caracteres. Padrão 0.' },
+      },
+      required: ['id'],
+    },
+  },
+  {
     name: 'remember',
     description:
       'Guarda na base de conhecimento um fato do negócio que o dono ensinou (preço, política, prazo, como responder algo). Passa a valer no atendimento aos clientes.',
@@ -181,13 +207,22 @@ const CONTACT_TOOLS = [
   },
 ];
 
-export function createBrain({ store, config, notifyOwner, sendToContact, documents, sendDocumentToOwner, client, log = console.error }) {
+export function createBrain({ store, config, notifyOwner, sendToContact, documents, sendDocumentToOwner, files, client, log = console.error }) {
   let anthropic = client;
   const getClient = () => (anthropic ??= new Anthropic());
 
   const days = (n) => store.now() - Math.max(0.05, Number(n) || 1) * 24 * 3600 * 1000;
 
   const ownerHandlers = (ctx) => ({
+    search_files: ({ query }) => {
+      if (!files) throw new Error('arquivos indisponíveis');
+      const hits = files.search(query);
+      return hits.length ? hits : { found: 0, note: 'nada encontrado com essas palavras; tente outros termos ou leia o arquivo pelo índice' };
+    },
+    read_file: ({ id, from }) => {
+      if (!files) throw new Error('arquivos indisponíveis');
+      return files.read(id, from);
+    },
     create_document: async ({ title, content, send_whatsapp }) => {
       if (!documents) throw new Error('geração de documentos indisponível');
       const doc = await documents.create({ title, content });
@@ -441,7 +476,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
         const reply = await run({
           trace: meta,
           model: meta.model,
-          system: ownerSystem(config, rules, loadKnowledge(config.knowledgeDir, store)),
+          system: ownerSystem(config, rules, loadKnowledge(config.knowledgeDir, store), files ? files.index() : ''),
           tools: ownerTools(),
           handlers: ownerHandlers({ channel: channel === 'voice' || channel === 'text' ? channel : 'whatsapp', documents: created }),
           conversationId: 'owner',
