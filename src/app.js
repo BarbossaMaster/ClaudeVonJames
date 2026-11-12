@@ -177,7 +177,12 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
     const msgs = parseWebhook(req.body);
     const field = req.body?.entry?.[0]?.changes?.[0]?.field ?? '?';
     const statuses = req.body?.entry?.[0]?.changes?.[0]?.value?.statuses?.length ?? 0;
-    if (!msgs.length) log(`[jarvis] WhatsApp: entrega sem mensagem (campo "${field}", ${statuses} avisos de status)`);
+    // Avisos de status dizem o destino de cada resposta: sent, delivered, read ou failed (com o motivo).
+    for (const st of req.body?.entry?.[0]?.changes?.[0]?.value?.statuses ?? []) {
+      const err = st.errors?.[0];
+      log(`[jarvis] WhatsApp: resposta a ${tail(st.recipient_id)} → ${st.status}${err ? ` · erro ${err.code}: ${err.title ?? ''} ${err.error_data?.details ?? err.message ?? ''}` : ''}`);
+    }
+    if (!msgs.length && !statuses) log(`[jarvis] WhatsApp: entrega sem mensagem (campo "${field}")`);
     for (const msg of msgs) {
       log(`[jarvis] WhatsApp: mensagem de ${tail(msg.from)} (${msg.type})${samePhone(msg.from, config.whatsapp.owner) ? ', reconhecido como dono' : ', tratado como contato'}`);
       jarvis
