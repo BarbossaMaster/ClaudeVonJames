@@ -134,9 +134,7 @@
   .linkish { color: var(--muted); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 
   /* Feixe: uma linha de luz que sai do núcleo e aponta a informação de que ele está tratando. */
-  #beam { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 4; overflow: visible; }
-  #beam line { stroke: var(--green); stroke-width: 1; stroke-linecap: round; filter: drop-shadow(0 0 4px var(--green)); }
-  #beam circle { fill: var(--purple); filter: drop-shadow(0 0 6px var(--green)); }
+  #beamfx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 4; }
   .lit, .lit i { color: var(--purple) !important; text-shadow: 0 0 12px var(--green); transition: color .3s, text-shadow .3s; }
 
   /* HUD: telemetria real em volta do núcleo. Some inteiro com body.hud-off. */
@@ -220,7 +218,7 @@
 </style>
 </head>
 <body>
-<svg id="beam" aria-hidden="true"><line id="beam-line" opacity="0"/><circle id="beam-dot" r="2.6" opacity="0"/></svg>
+<canvas id="beamfx" aria-hidden="true"></canvas>
 <header>
   <div class="brand"><span class="mark"><img src="logo.png" alt=""></span><h1 id="name"><span class="long">Guardião da </span><span id="brandname">marca</span></h1></div>
   <div class="actions">
@@ -431,34 +429,85 @@
     beamQueue.push(target); if (beamQueue.length > 4) beamQueue.shift();
     if (!beamBusy) nextBeam();
   }
+  // O feixe é um filamento vivo, feito da mesma luz da esfera: nasce na superfície dela, cresce em curva
+  // até a informação, ondula enquanto aponta, leva faíscas da raiz à ponta e depois se recolhe para dentro.
+  // Cada um sai com curvatura, ritmo e tremor próprios, para nunca repetir o mesmo gesto.
+  const fx = $('beamfx'), fg = fx.getContext('2d');
+  function fitFx() { const d = Math.min(devicePixelRatio || 1, 2); fx.width = Math.round(innerWidth * d); fx.height = Math.round(innerHeight * d); fg.setTransform(d, 0, 0, d, 0, 0); }
+  fitFx(); addEventListener('resize', fitFx);
   function nextBeam() {
     const target = beamQueue.shift();
-    if (target == null) { beamBusy = false; return; }
-    const el = typeof target === 'string' ? document.querySelector(`[data-k="${target}"]`) : target;
+    if (target == null) { beamBusy = false; fg.clearRect(0, 0, innerWidth, innerHeight); return; }
+    const find = () => (typeof target === 'string' ? document.querySelector(`[data-k="${target}"]`) : target);
+    let el = find();
     if (!el || !el.getClientRects().length) return nextBeam();
     beamBusy = true;
-    if (typeof target === 'string') { sys.lit = target; sys.litUntil = Date.now() + 1700; el.classList.add('lit'); }
-    else { el.classList.add('lit'); setTimeout(() => el.classList.remove('lit'), 1700); }
-    const o = viz.getBoundingClientRect(), t = el.getBoundingClientRect();
-    const cx = o.left + o.width / 2, cy = o.top + o.height / 2;
-    // ponto de chegada: a borda do alvo mais próxima do núcleo
-    const tx = cx < t.left ? t.left - 7 : cx > t.right ? t.right + 7 : Math.max(t.left + 8, Math.min(cx, t.right - 8));
-    const ty = cy < t.top ? (cx >= t.left && cx <= t.right ? t.top - 4 : (t.top + t.bottom) / 2) : cy > t.bottom ? (cx >= t.left && cx <= t.right ? t.bottom + 4 : (t.top + t.bottom) / 2) : (t.top + t.bottom) / 2;
-    const d = Math.hypot(tx - cx, ty - cy) || 1, ux = (tx - cx) / d, uy = (ty - cy) / d;
-    const r0 = o.width * .25, sx = cx + ux * r0, sy = cy + uy * r0;  // nasce na superfície da esfera
-    const line = $('beam-line'), dot = $('beam-dot');
-    line.setAttribute('x1', sx); line.setAttribute('y1', sy);
-    const GROW = 420, HOLD = 950, FADE = 450, start = performance.now();
-    if (still) { sys.litUntil = Date.now() + 1700; return setTimeout(() => { beamBusy = false; nextBeam(); }, 1700); } // sem animação: só o destaque
-    (function step(now) {
-      const e = now - start;
-      const k = Math.min(1, e / GROW), ease = 1 - Math.pow(1 - k, 3);
-      const x = sx + (tx - sx) * ease, y = sy + (ty - sy) * ease;
-      const a = e < GROW + HOLD ? 1 : Math.max(0, 1 - (e - GROW - HOLD) / FADE);
-      line.setAttribute('x2', x); line.setAttribute('y2', y); line.setAttribute('opacity', a * .85);
-      dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('opacity', a);
-      if (e < GROW + HOLD + FADE) requestAnimationFrame(step);
-      else { beamBusy = false; nextBeam(); }
+    if (typeof target === 'string') { sys.lit = target; sys.litUntil = Date.now() + 2300; }
+    const light = () => { const e = find(); if (e) e.classList.add('lit'); return e; };
+    if (still) { light(); return setTimeout(() => { const e = find(); if (e && typeof target !== 'string') e.classList.remove('lit'); beamBusy = false; nextBeam(); }, 1700); }
+
+    const rnd = Math.random, side = rnd() < .5 ? -1 : 1;
+    const bend = (.10 + rnd() * .16) * side, bend2 = (.04 + rnd() * .12) * -side;   // curvatura dos dois pontos de controle
+    const f1 = 1.1 + rnd() * 1.3, f2 = 1.7 + rnd() * 1.6, ph1 = rnd() * 6.28, ph2 = rnd() * 6.28; // ritmos do ondular
+    const GROW = 520 + rnd() * 260, HOLD = 950 + rnd() * 350, BACK = 420 + rnd() * 200;
+    const sparks = Array.from({ length: 5 + Math.floor(rnd() * 4) }, () => ({ at: rnd(), speed: .5 + rnd() * .9, size: .8 + rnd() * 1.1 }));
+    const start = performance.now(); let lit = false;
+
+    (function frame(now) {
+      const e = now - start, tsec = e / 1000;
+      el = find() || el;
+      const o = viz.getBoundingClientRect(), t = el.getBoundingClientRect();
+      const cx = o.left + o.width / 2, cy = o.top + o.height / 2;
+      const tx = cx < t.left ? t.left - 7 : cx > t.right ? t.right + 7 : Math.max(t.left + 8, Math.min(cx, t.right - 8));
+      const ty = cy < t.top ? (cx >= t.left && cx <= t.right ? t.top - 4 : (t.top + t.bottom) / 2) : cy > t.bottom ? (cx >= t.left && cx <= t.right ? t.bottom + 4 : (t.top + t.bottom) / 2) : (t.top + t.bottom) / 2;
+      const d = Math.hypot(tx - cx, ty - cy) || 1, ux = (tx - cx) / d, uy = (ty - cy) / d, nx = -uy, ny = ux;
+      const r0 = o.width * .225, sx = cx + ux * r0, sy = cy + uy * r0, len = Math.hypot(tx - sx, ty - sy);
+      // pontos de controle que respiram: a curva nunca fica parada
+      const w1 = len * (bend + .035 * Math.sin(tsec * f1 * 2 + ph1)), w2 = len * (bend2 + .03 * Math.sin(tsec * f2 * 2 + ph2));
+      const c1x = sx + (tx - sx) * .33 + nx * w1, c1y = sy + (ty - sy) * .33 + ny * w1;
+      const c2x = sx + (tx - sx) * .7 + nx * w2, c2y = sy + (ty - sy) * .7 + ny * w2;
+      const at = (q) => { const m = 1 - q; return [m * m * m * sx + 3 * m * m * q * c1x + 3 * m * q * q * c2x + q * q * q * tx, m * m * m * sy + 3 * m * m * q * c1y + 3 * m * q * q * c2y + q * q * q * ty]; };
+      // quanto do filamento existe: cresce com um leve excesso, segura, e se recolhe para a esfera
+      let k;
+      if (e < GROW) { const q = e / GROW; k = 1 - Math.pow(1 - q, 3); }
+      else if (e < GROW + HOLD) k = 1;
+      else { const q = Math.min(1, (e - GROW - HOLD) / BACK); k = 1 - q * q; }
+      if (!lit && k > .96) { lit = true; light(); }
+
+      fg.clearRect(0, 0, innerWidth, innerHeight);
+      if (k > .01) {
+        fg.globalCompositeOperation = 'lighter'; fg.lineCap = 'round'; fg.lineJoin = 'round';
+        const N = 46, pts = [];
+        for (let i = 0; i <= N; i++) pts.push(at((i / N) * k));
+        const tip = pts[N];
+        const grad = fg.createLinearGradient(sx, sy, tip[0], tip[1]);
+        grad.addColorStop(0, rgba(GOLD, .0)); grad.addColorStop(.12, rgba(GOLD, 1)); grad.addColorStop(.75, rgba(WHITE, 1)); grad.addColorStop(1, rgba(NEON, 1));
+        const flick = .82 + .18 * Math.sin(tsec * 23 + ph1) * Math.sin(tsec * 7.1 + ph2); // tremor de luz
+        // três traços sobrepostos: névoa larga, corpo e fio central
+        for (const [w, a] of [[9, .07], [3.6, .22], [1.15, .95]]) {
+          fg.beginPath(); fg.moveTo(pts[0][0], pts[0][1]);
+          for (let i = 1; i <= N; i++) fg.lineTo(pts[i][0], pts[i][1]);
+          fg.strokeStyle = grad; fg.globalAlpha = a * flick; fg.lineWidth = w; fg.stroke();
+        }
+        // faíscas que correm da raiz para a ponta
+        for (const sp of sparks) {
+          const q = ((sp.at + tsec * sp.speed) % 1) * k, [px, py] = at(q), tw = .5 + .5 * Math.sin(tsec * 9 + sp.at * 40);
+          fg.globalAlpha = (.35 + .65 * tw) * Math.min(1, q * 8);
+          fg.fillStyle = rgba(NEON, 1); fg.shadowColor = rgba(NEON, .9); fg.shadowBlur = 6;
+          fg.beginPath(); fg.arc(px, py, sp.size * (.7 + .5 * tw), 0, 6.2832); fg.fill();
+        }
+        // ponta: um ponto de luz que pulsa
+        const pulse = 1 + .35 * Math.sin(tsec * 6 + ph1);
+        const glow = fg.createRadialGradient(tip[0], tip[1], 0, tip[0], tip[1], 11 * pulse);
+        glow.addColorStop(0, rgba(NEON, .9)); glow.addColorStop(.3, rgba(WHITE, .35)); glow.addColorStop(1, rgba(GOLD, 0));
+        fg.shadowBlur = 0; fg.globalAlpha = Math.min(1, k * 1.4); fg.fillStyle = glow;
+        fg.beginPath(); fg.arc(tip[0], tip[1], 11 * pulse, 0, 6.2832); fg.fill();
+        fg.globalAlpha = 1; fg.globalCompositeOperation = 'source-over';
+      }
+      if (e < GROW + HOLD + BACK) return requestAnimationFrame(frame);
+      fg.clearRect(0, 0, innerWidth, innerHeight);
+      if (typeof target !== 'string') { const x = find(); if (x) x.classList.remove('lit'); }
+      beamBusy = false; nextBeam();
     })(start);
   }
 
