@@ -537,6 +537,26 @@
     vento: '<g class="drift"><path d="M10 24h28a6 6 0 1 0-6-6"/><path class="hot" d="M10 33h38a6 6 0 1 1-6 6"/><path d="M14 42h16a5 5 0 1 1-5 5"/></g>',
     neve: `${CLOUD}<g class="hot tw"><path d="M24 51v7M21 54.5h6"/></g><g class="hot tw" style="animation-delay:.7s"><path d="M33 53v7M30 56.5h6"/></g><g class="hot tw" style="animation-delay:1.3s"><path d="M42 51v7M39 54.5h6"/></g>`,
   };
+  // Tempo em Limeira no painel: consulta o Open-Meteo (sem chave) a cada 30 minutos; se falhar, a linha fica só com a localização.
+  function wxName(code, day) {
+    if (code <= 1) return day ? 'sol' : 'lua';
+    if (code === 2) return day ? 'parcial' : 'nuvem';
+    if (code === 3 || code === 45 || code === 48) return 'nuvem';
+    if (code >= 95) return 'tempestade';
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'neve';
+    return 'chuva';
+  }
+  async function loadWx() {
+    const el = $('wx');
+    try {
+      const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=-22.565&longitude=-47.401&current=temperature_2m,weather_code,is_day&timezone=America%2FSao_Paulo');
+      const c = (await r.json()).current;
+      const t = Math.round(c.temperature_2m), g = GLYPHS[wxName(c.weather_code, c.is_day === 1)];
+      if (!el || !g || !Number.isFinite(t)) throw new Error('sem dados');
+      el.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true">${g}</svg><i>${t}°C</i>`;
+    } catch { if (el) el.textContent = ''; }
+  }
+  loadWx(); setInterval(loadWx, 30 * 60 * 1000);
   let glyphSide = 1;
   // O feixe vai até um ponto ao lado da esfera e o símbolo se forma ali quando a ponta chega; some ao fim do trecho.
   function spawnGlyph(name, arriveAt, hold) {
