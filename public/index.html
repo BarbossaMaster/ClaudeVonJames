@@ -1221,7 +1221,7 @@
       return { data, step };
     });
   }
-  function speak(text) {
+  function speak(text, quiet) {
     return new Promise((resolve) => {
       let done = false, timer = null;
       const finish = (why = 'evento') => {
