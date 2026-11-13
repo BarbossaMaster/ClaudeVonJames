@@ -1204,9 +1204,7 @@
       assistant = s.assistant || 'Jarvis'; serverVoice = Boolean(s.voice); voiceRate = Number(s.voiceRate) || 1;
       $('brandname').textContent = s.business || 'marca'; document.title = assistant;
       orb.setAttribute('aria-label', 'Falar com o ' + assistant);
-      $('s-q').textContent = s.today.questionsAnswered;
-      $('s-m').textContent = s.today.newMembers;
-      $('s-v').textContent = s.today.sales.count;
+      // Membros, vendas e valor vendido ficam fixos por enquanto (valores do HTML), atualizados à mão a pedido do dono.
       $('s-p').textContent = s.today.pending.length;
       $('s-p-box').classList.toggle('alert', s.today.pending.length > 0);
       renderSys();
