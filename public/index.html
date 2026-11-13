@@ -1938,7 +1938,7 @@
   if (token) refresh(); else askToken('');
   setInterval(() => token && document.visibilityState === 'visible' && refresh(), 60000);
 
-  // Ao carregar: se a fala foi cortada, retoma de onde parou; senão, dá um salve (no máximo um a cada 10 minutos).
+  // Ao carregar: se a fala foi cortada por uma recarga, retoma de onde parou. Fora isso, fica em silêncio até ser chamado.
   async function bootGreeting() {
     if (!token) return;
     let cut = null;
@@ -1946,12 +1946,7 @@
     let text;
     if (cut && cut.text && Date.now() - cut.at < 5 * 60 * 1000) {
       text = '[Aviso do sistema: a página recarregou e cortou a sua fala no meio. Era isto que o senhor estava dizendo: "' + String(cut.text).slice(0, 1500) + '". Retome de onde parou, a partir da última frase inteira, com uma frase de ligação natural, sem saudação nova e sem recomeçar do zero. Fale como numa conversa entre pessoas.]';
-    } else {
-      let last = 0; try { last = Number(localStorage.getItem('jv_greet_at')) || 0; } catch {}
-      if (Date.now() - last < 10 * 60 * 1000) return;
-      text = '[Aviso do sistema: a página acabou de carregar e o senhor está online. Dê um salve curto, de uma ou duas frases, diferente de qualquer saudação anterior, pensado agora.]';
-    }
-    try { localStorage.setItem('jv_greet_at', String(Date.now())); } catch {}
+    } else return; // sem saudação automática: abrir a página não gasta crédito de IA nem de voz
     if (state === 'thinking' || state === 'speaking') return;
     setState('thinking'); hud('pensando');
     try {

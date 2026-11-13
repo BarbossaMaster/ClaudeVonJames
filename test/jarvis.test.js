@@ -338,7 +338,7 @@ test('raciocínio por voz: médio por padrão, ajustável, valor inválido é ig
   assert.equal(setup({ env: { JARVIS_VOICE_EFFORT: 'turbo' } }).config.voiceEffort, 'medium');
 });
 
-test('roteiro de atendimento: entra na base dos dois modos, com a orientação de como usar', async () => {
+test('roteiro de atendimento: vale na conversa com leads e não pesa na conversa com o dono', async () => {
   const t = setup({ script: [say('Oi!'), say('ok')], env: { KNOWLEDGE_DIR: 'knowledge' } });
   await t.brain.contact('oi vi o vídeo de vocês', { contact: '5511911112222', contactName: 'Ana' });
   const lead = t.client.requests[0].system;
@@ -349,8 +349,10 @@ test('roteiro de atendimento: entra na base dos dois modos, com a orientação d
 
   await t.brain.owner('oi');
   const owner = t.client.requests[1].system;
+  // Com o dono o roteiro fica de fora (só o nome do arquivo aparece): não pesa em cada mensagem dele.
   assert.match(owner, /Arquivo: atendimento-whatsapp\.md/);
-  assert.match(owner, /valem para quem está de fora, não para ele/);
+  assert.doesNotMatch(owner, /Nunca mencione Lovable/);
+  assert.ok(owner.length < lead.length, 'prompt do dono não carrega o roteiro');
 });
 
 test('modo rápido não é enviado a modelos que não o aceitam', async () => {
