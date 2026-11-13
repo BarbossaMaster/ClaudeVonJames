@@ -794,3 +794,14 @@ test('transcrição local: fala longa é cortada na pausa; frase fantasma de sil
   assert.equal(loadConfig({ JARVIS_LOCAL_STT: 'off' }).localStt, '');
   assert.equal(loadConfig({ JARVIS_LOCAL_STT: 'base' }).localStt, 'base');
 });
+
+test('símbolos: a lista do cérebro bate com os desenhos da tela', async () => {
+  const { SCREEN_SYMBOLS, screenAction } = await import('../src/brain.js');
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  const block = page.slice(page.indexOf('const GLYPHS = {'), page.indexOf('let glyphSide'));
+  const drawn = [...block.matchAll(/^    ([a-z]+): [`']/gm)].map((m) => m[1]);
+  assert.deepEqual([...SCREEN_SYMBOLS].sort(), [...new Set(drawn)].sort());
+  assert.deepEqual(screenAction('show', 'Avião'), { action: 'show', target: 'aviao' });
+  assert.equal(screenAction('show', 'dragao'), null);
+});
