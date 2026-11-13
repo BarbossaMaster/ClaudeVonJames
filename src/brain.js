@@ -591,7 +591,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
 
     let reply = '';
     for (let step = 0; step < MAX_STEPS; step++) {
-      const response = await getClient().beta.messages.create({
+      const ask = () => getClient().beta.messages.create({
         model,
         max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'],
@@ -605,6 +605,15 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
         tools,
         messages,
       });
+      let response;
+      try { response = await ask(); } catch (e) {
+        // A busca na internet pode não estar liberada na conta: nesse caso segue sem ela em vez de ficar mudo.
+        if (e?.status !== 400 || !tools.some((t) => t.name === 'web_search')) throw e;
+        log('[jarvis] pedido recusado com a busca na internet; seguindo sem ela:', e.message);
+        webOff = true;
+        tools = tools.filter((t) => t.name !== 'web_search');
+        response = await ask();
+      }
 
       trace.steps++;
       trace.tokensIn += (response.usage?.input_tokens ?? 0) + (response.usage?.cache_read_input_tokens ?? 0) + (response.usage?.cache_creation_input_tokens ?? 0);
@@ -652,6 +661,17 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
     return reply;
   }
 
+  let webOff = false; // vira true se a conta recusar a busca na internet
+  // Motivo da falha em palavras simples, para o dono saber o que resolver.
+  const reason = (e) => {
+    const m = String(e?.message || '').toLowerCase();
+    if (e instanceof Anthropic.AuthenticationError) return 'a chave da API do Claude está inválida ou ausente no servidor';
+    if (m.includes('credit balance') || m.includes('billing')) return 'os créditos da conta do Claude acabaram';
+    if (e instanceof Anthropic.RateLimitError) return 'o limite de uso da conta do Claude foi atingido';
+    if (e?.status === 529 || e?.status >= 500) return 'o serviço do Claude está instável agora';
+    if (e?.status === 400) return `o Claude recusou o pedido (${String(e.message).slice(0, 140)})`;
+    return 'houve uma falha interna';
+  };
   const fail = (e) => {
     if (e instanceof Anthropic.AuthenticationError) log('[jarvis] chave da API do Claude inválida ou ausente.');
     else if (e instanceof Anthropic.RateLimitError) log('[jarvis] limite de uso da API atingido.');
@@ -672,7 +692,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
           trace: meta,
           model: meta.model,
           system: ownerSystem(config, rules, loadKnowledge(config.knowledgeDir, store), files ? files.index() : ''),
-          tools: config.webSearch ? [...ownerTools(), { type: 'web_search_20260209', name: 'web_search', max_uses: 3 }] : ownerTools(),
+          tools: config.webSearch && !webOff ? [...ownerTools(), { type: 'web_search_20260209', name: 'web_search', max_uses: 3 }] : ownerTools(),
           handlers: ownerHandlers({ channel: channel === 'voice' || channel === 'text' ? channel : 'whatsapp', documents: created, actions: meta.actions }),
           conversationId: 'owner',
           text,
@@ -692,7 +712,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
         return parsed.text;
       } catch (e) {
         fail(e);
-        return `Estou sem acesso ao meu raciocínio no momento, ${config.ownerTitle}. Tente de novo em instantes.`;
+        return `Estou sem acesso ao meu raciocínio no momento, ${config.ownerTitle}: ${reason(e)}.`;
       }
     },
 
