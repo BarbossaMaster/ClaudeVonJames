@@ -149,6 +149,16 @@
   @keyframes gflash { 0%, 100% { opacity: .35; } 45% { opacity: 1; } }
   @keyframes gdrift { 0%, 100% { transform: translateX(-2px); } 50% { transform: translateX(3px); } }
   @media (prefers-reduced-motion: reduce) { .glyph * { animation: none !important; } }
+.wxs { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: middle; }
+.wxs svg { width: 18px; height: 18px; fill: none; stroke: #F08A2A; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.wxs .hot { stroke: #FFD54A; }
+.wxs .spin { transform-origin: 32px 32px; animation: gspin 14s linear infinite; }
+.wxs .spin2 { transform-origin: 22px 24px; animation: gspin 14s linear infinite; }
+.wxs .drop { stroke-dasharray: 5 9; animation: gfall .9s linear infinite; }
+.wxs .flash { animation: gflash 1.6s ease-in-out infinite; }
+.wxs .drift { animation: gdrift 2.6s ease-in-out infinite; }
+.wxs .tw { animation: gflash 2.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .wxs * { animation: none !important; } }
 
   /* Feixe: uma linha de luz que sai do núcleo e aponta a informação de que ele está tratando. */
   /* Fora do Núcleo ele não some: fica num canto, menor, e continua apontando e falando. */
