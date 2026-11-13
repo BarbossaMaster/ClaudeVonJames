@@ -258,11 +258,13 @@ test('voz mais ágil: números do dia vão no contexto e o modo rápido é opcio
   assert.match(req.messages.at(-1).content, /"newMembers":1/);
   assert.equal(req.speed, undefined);
 
+  // O modelo é sempre o Sonnet, que não tem modo rápido: nem a variável antiga de modelo muda isso.
   const b = setup({ script: [say('Ok.'), say('Ok.')], env: { JARVIS_FAST: '1', VOICE_SPEED: '9', JARVIS_MODEL: 'claude-opus-5-5' } });
   await b.brain.owner('oi', { channel: 'voice' });
   await b.brain.owner('oi', { channel: 'text' });
-  assert.equal(b.client.requests[0].speed, 'fast');
-  assert.equal(b.client.requests[1].speed, undefined, 'texto não usa o modo rápido');
+  assert.equal(b.client.requests[0].model, 'claude-sonnet-5-5');
+  assert.equal(b.client.requests[0].speed, undefined);
+  assert.equal(b.client.requests[1].speed, undefined);
   assert.equal(b.config.voiceRate, 1.6, 'velocidade fica dentro do limite');
 });
 
@@ -362,44 +364,17 @@ test('modo rápido não é enviado a modelos que não o aceitam', async () => {
   assert.equal(t.client.requests[0].speed, undefined);
 });
 
-test('troca automática de modelo: simples no Sonnet, importante no Opus, falha cai no Sonnet', async () => {
-  const on = { JARVIS_ROUTER: 'on' };
-  const verdict = (v) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: v }] });
-
-  // curta: nem consulta o classificador
-  const a = setup({ script: [say('Bom dia.')], env: on });
-  await a.brain.owner('bom dia James');
-  assert.equal(a.client.requests.length, 1);
-  assert.equal(a.client.requests[0].model, 'claude-sonnet-5-5');
-
-  // classificador diz IMPORTANTE: turno inteiro no Opus
-  const b = setup({ script: [verdict('IMPORTANTE'), say('Análise.')], env: on });
+test('modelo único: toda conversa usa o Sonnet, sem classificador e sem subir para modelo mais caro', async () => {
+  const env = { JARVIS_ROUTER: 'on', JARVIS_MODEL: 'claude-opus-5-5', JARVIS_SMART_MODEL: 'claude-opus-5-5' };
+  const a = setup({ script: [say('Análise.')], env });
   const meta = {};
-  await b.brain.owner('vale a pena dar 20% de desconto para fechar com a loja da Ana ainda este mês?', { meta });
-  assert.equal(b.client.requests[0].model, 'claude-haiku-5-5');
-  assert.match(b.client.requests[0].messages[0].content, /20% de desconto/);
-  assert.equal(b.client.requests[1].model, 'claude-opus-5-5');
-  assert.equal(meta.model, 'claude-opus-5-5');
+  await a.brain.owner('pensa bem: vale a pena dar 20% de desconto para fechar com a loja da Ana ainda este mês?', { meta });
+  assert.equal(a.client.requests.length, 1, 'nenhuma chamada extra de classificação');
+  assert.equal(a.client.requests[0].model, 'claude-sonnet-5-5');
+  assert.equal(meta.model, 'claude-sonnet-5-5');
 
-  // classificador diz SIMPLES
-  const c = setup({ script: [verdict('SIMPLES'), say('Três vendas.')], env: on });
-  await c.brain.owner('quantas vendas a gente teve hoje até agora mesmo?');
-  assert.equal(c.client.requests[1].model, 'claude-sonnet-5-5');
-
-  // pedido explícito dispensa o classificador
-  const d = setup({ script: [say('Pensando.')], env: on });
-  await d.brain.owner('pensa bem nisso antes de responder');
-  assert.equal(d.client.requests[0].model, 'claude-opus-5-5');
-
-  // classificador fora do ar: segue no Sonnet e responde normalmente
-  const e = setup({ script: [() => { throw new Error('timeout'); }, say('Respondi.')], env: on });
-  assert.equal(await e.brain.owner('me explica como está o funil de prospecção desta semana'), 'Respondi.');
-  assert.equal(e.client.requests[1].model, 'claude-sonnet-5-5');
-
-  // cliente no WhatsApp não passa pela troca
-  const f = setup({ script: [say('Olá!')], env: on });
+  const f = setup({ script: [say('Olá!')], env });
   await f.brain.contact('queria entender melhor os planos e valores da plataforma de vocês', { contact: '5521999990000' });
-  assert.equal(f.client.requests.length, 1);
   assert.equal(f.client.requests[0].model, 'claude-sonnet-5-5');
 });
 
@@ -607,11 +582,12 @@ test('agenda: o dono marca por conversa, vê na lista, exporta para o calendári
   }
 });
 
-test('modelo das conversas: Sonnet fixo por padrão; a troca automática só liga por opção', async () => {
+test('modelo das conversas: Sonnet fixo, sem variável que troque', async () => {
   const { loadConfig } = await import('../src/config.js');
   assert.equal(loadConfig({}).router, false);
   assert.equal(loadConfig({}).model, 'claude-sonnet-5-5');
-  assert.equal(loadConfig({ JARVIS_ROUTER: 'on' }).router, true);
+  assert.equal(loadConfig({ JARVIS_ROUTER: 'on' }).router, false);
+  assert.equal(loadConfig({ JARVIS_MODEL: 'claude-opus-5-5' }).model, 'claude-sonnet-5-5');
 });
 
 test('lembretes do Guardião: nascem com as duas pendências, entram no resumo e somem quando concluídos', async () => {
@@ -766,9 +742,55 @@ test('internet: a busca entra nas ferramentas do dono, o texto final junta os bl
   const reply = await t.brain.owner('como vai estar o tempo em Campinas amanhã?', { channel: 'voice', meta });
   assert.equal(reply, 'Amanhã em Campinas: sol com 29 graus.');
   const tool = t.client.requests[0].tools.at(-1);
-  assert.deepEqual(tool, { type: 'web_search_20260209', name: 'web_search', max_uses: 3 });
+  assert.deepEqual(tool, { type: 'web_search_20260209', name: 'web_search', max_uses: 1 });
   assert.deepEqual(meta.tools, ['web_search']);
   await t.brain.contact('e o tempo aí?', { contact: '5521999990000' });
   assert.deepEqual(t.client.requests[1].tools.map((x) => x.name), ['escalate_to_owner']);
   assert.equal(setup().client.requests.length, 0);
+});
+
+test('transcrição local: fala do app vai para o Whisper do servidor; o serviço pago só entra como reserva', async () => {
+  const { createSpeech } = await import('../src/speech.js');
+  const calls = [];
+  const fetchImpl = async (url) => { calls.push(url); return { ok: true, status: 200, json: async () => ({ text: 'pago' }) }; };
+  const wav = Buffer.from('RIFF....WAVE');
+
+  // modelo pronto: nenhuma chamada paga
+  const ok = createSpeech({ elevenKey: 'e' }, { fetchImpl, local: { ready: true, transcribe: async () => 'local' }, log: () => {} });
+  assert.equal(ok.listener, 'local');
+  assert.equal(await ok.transcribe(wav, 'audio/wav'), 'local');
+  assert.equal(calls.length, 0);
+
+  // áudio do WhatsApp (ogg) não passa pelo local
+  assert.equal(await ok.transcribe(Buffer.from('ogg'), 'audio/ogg'), 'pago');
+  assert.equal(calls.length, 1);
+
+  // modelo ainda baixando, ou falha: usa o pago desta vez
+  const loading = createSpeech({ elevenKey: 'e' }, { fetchImpl, local: { ready: false, transcribe: async () => { throw new Error('x'); } }, log: () => {} });
+  assert.equal(loading.listener, 'elevenlabs');
+  assert.equal(await loading.transcribe(wav, 'audio/wav'), 'pago');
+  const broken = createSpeech({ elevenKey: 'e' }, { fetchImpl, local: { ready: true, transcribe: async () => { throw new Error('x'); } }, log: () => {} });
+  assert.equal(await broken.transcribe(wav, 'audio/wav'), 'pago');
+
+  // sem chave nenhuma, o local basta para o servidor ouvir
+  const alone = createSpeech({}, { fetchImpl, local: { ready: true, transcribe: async () => 'só local' } });
+  assert.equal(alone.enabled, true);
+  assert.equal(await alone.transcribe(wav, 'audio/wav'), 'só local');
+});
+
+test('transcrição local: fala longa é cortada na pausa; frase fantasma de silêncio é descartada; desliga por variável', async () => {
+  const { splitSamples, cleanText } = await import('../src/stt-worker.js');
+  const { loadConfig } = await import('../src/config.js');
+  const rate = 16000, long = new Float32Array(60 * rate).fill(0.5);
+  long.fill(0, 22 * rate, 22.5 * rate); // uma pausa aos 22 s
+  const parts = splitSamples(long, rate);
+  assert.ok(parts.every((p) => p.length <= 25 * rate));
+  assert.equal(parts.reduce((n, p) => n + p.length, 0), long.length, 'nada se perde no corte');
+  assert.ok(Math.abs(parts[0].length / rate - 22.25) < 0.3, 'corta dentro da pausa');
+  assert.equal(splitSamples(new Float32Array(5 * rate), rate).length, 1);
+  assert.equal(cleanText(' Legendas pela comunidade Amara.org '), '');
+  assert.equal(cleanText(' como  foi o dia? '), 'como foi o dia?');
+  assert.equal(loadConfig({}).localStt, 'small');
+  assert.equal(loadConfig({ JARVIS_LOCAL_STT: 'off' }).localStt, '');
+  assert.equal(loadConfig({ JARVIS_LOCAL_STT: 'base' }).localStt, 'base');
 });

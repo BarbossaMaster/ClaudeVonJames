@@ -382,6 +382,8 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
         listen: Boolean(speech?.enabled) && config.serverListen,
         // O servidor consegue transcrever? O app usa isso como reserva quando o reconhecimento do navegador falha.
         listenAvailable: Boolean(speech?.enabled),
+        // Quem transcreve agora: 'local' (no próprio servidor, sem custo por uso), 'elevenlabs' ou 'openai'.
+        listener: speech?.listener ?? null,
         voiceprint: voiceprints ? voiceprints.status() : { available: false, people: [] },
         ...knowledgeStats(),
         documents: documents ? documents.list(200).length : 0,
