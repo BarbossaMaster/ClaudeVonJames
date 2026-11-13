@@ -1240,6 +1240,7 @@
 
       const browser = () => {
         if (done) return;
+        if (quiet) return finish('bloqueada');
         if (!synth) return finish();
         synth.cancel();
         const u = new SpeechSynthesisUtterance(text);
