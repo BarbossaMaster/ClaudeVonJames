@@ -1,6 +1,9 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { getRules } from './store.js';
 import { loadKnowledge } from './knowledge.js';
 import { snapshot, runBriefing } from './briefing.js';
@@ -207,13 +210,21 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
       const meta = {};
       const screen = req.body?.screen && typeof req.body.screen === 'object' ? req.body.screen : null;
       const reply = await brain.owner(text.slice(0, 4000), { channel, documents: created, meta, screen });
+      // Na conversa por voz a fala já volta junto com a resposta: uma ida ao servidor a menos antes de ele falar.
+      let spoken = null;
+      if (req.body?.speak && reply && speech?.canSpeak && speech.speakTimed) {
+        const t0 = Date.now();
+        try { spoken = await speech.speakTimed(reply.slice(0, 2000)); } catch (e) { log('[jarvis] fala junto da resposta falhou; o app pede à parte:', e.message); }
+        meta.speechMs = Date.now() - t0;
+      }
       res.json({
         reply,
+        ...(spoken ? { speech: spoken } : {}),
         documents: created,
         actions: meta.actions ?? [], // comandos de tela que o app executa com o feixe
         cues: meta.cues ?? [],       // gestos marcados dentro da fala, com a posição no texto
         model: meta.model,
-        trace: { model: meta.model, ms: meta.ms, routeMs: meta.routeMs, steps: meta.steps, tools: meta.tools, tokensIn: meta.tokensIn, tokensOut: meta.tokensOut },
+        trace: { model: meta.model, ms: meta.ms, speechMs: meta.speechMs, routeMs: meta.routeMs, steps: meta.steps, tools: meta.tools, tokensIn: meta.tokensIn, tokensOut: meta.tokensOut },
       });
     }),
   );
@@ -405,6 +416,20 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
     }),
   );
 
-  app.use(express.static(join(here, '..', 'public')));
+  // A tela vai comprimida (cerca de um quarto do tamanho) e o navegador só a baixa de novo quando ela muda.
+  let page = null;
+  app.get(['/', '/index.html'], (req, res, next) => {
+    try {
+      if (!page) {
+        const raw = readFileSync(join(here, '..', 'public', 'index.html'));
+        page = { raw, gz: gzipSync(raw, { level: 9 }), tag: `"${createHash('sha1').update(raw).digest('base64url')}"` };
+      }
+      res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', ETag: page.tag, Vary: 'Accept-Encoding' });
+      if (req.headers['if-none-match'] === page.tag) return res.status(304).end();
+      if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) return res.set('Content-Encoding', 'gzip').send(page.gz);
+      return res.send(page.raw);
+    } catch (e) { return next(); }
+  });
+  app.use(express.static(join(here, '..', 'public'), { maxAge: '1h' }));
   return app;
 }

@@ -1222,7 +1222,7 @@
       return { data, step };
     });
   }
-  function speak(text, quiet) {
+  function speak(text, quiet, ready) {
     return new Promise((resolve) => {
       let done = false, timer = null;
       const finish = (why = 'evento') => {
@@ -1254,7 +1254,12 @@
       };
       if (!serverVoice) return browser();
 
-      fetch('/api/speak', {
+      const timedBlob = (j) => {
+        speechAlign = { starts: j.starts, ends: j.ends };
+        return new Blob([Uint8Array.from(atob(j.audio), (c) => c.charCodeAt(0))], { type: j.mime || 'audio/mpeg' });
+      };
+      // A fala pode já ter vindo junto com a resposta (mais rápido); senão, pede ao servidor.
+      (ready && ready.audio ? Promise.resolve().then(() => timedBlob(ready)) : fetch('/api/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
         body: JSON.stringify({ text, timed: true }),
@@ -1263,10 +1268,8 @@
           if (!res.ok) throw new Error('HTTP ' + res.status);
           // Com ElevenLabs vem um JSON com o áudio e o instante de cada letra; senão, só o áudio.
           if (!/json/.test(res.headers.get('content-type') || '')) { speechAlign = null; return res.blob(); }
-          const j = await res.json();
-          speechAlign = { starts: j.starts, ends: j.ends };
-          return new Blob([Uint8Array.from(atob(j.audio), (c) => c.charCodeAt(0))], { type: j.mime || 'audio/mpeg' });
-        })
+          return timedBlob(await res.json());
+        }))
         .then((blob) => {
           if (done) return;
           if (lastUrl) URL.revokeObjectURL(lastUrl);
@@ -1555,7 +1558,7 @@
     setState('thinking');
     hud('pensando');
     try {
-      const { reply, documents = [], trace, actions = [], cues = [] } = await api('/api/chat', { text, channel, screen: screenState() });
+      const { reply, documents = [], trace, actions = [], cues = [], speech: readySpeech = null } = await api('/api/chat', { text, channel, screen: screenState(), speak: channel === 'voice' && serverVoice });
       if (trace) {
         sys.active = trace.model; renderSys();
         const ACT = {
@@ -1582,7 +1585,7 @@
       if (channel === 'voice') {
         setState('speaking');
         try { localStorage.setItem('jv_cut', JSON.stringify({ text: reply, at: Date.now() })); } catch {} // se a página recarregar agora, ele sabe o que estava dizendo
-        await speak(reply);
+        await speak(reply, false, readySpeech);
         try { localStorage.removeItem('jv_cut'); } catch {}
       }
       finishCues();

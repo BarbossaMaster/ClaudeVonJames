@@ -114,7 +114,7 @@ export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
 
     history(contact, limit = 20) {
       return db
-        .prepare('SELECT role, text, ts FROM turns WHERE contact = ? ORDER BY id DESC LIMIT ?')
+        .prepare('SELECT id, role, text, ts FROM turns WHERE contact = ? ORDER BY id DESC LIMIT ?')
         .all(contact, limit)
         .reverse();
     },

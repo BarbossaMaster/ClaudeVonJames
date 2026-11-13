@@ -18,7 +18,10 @@ export function fakeClaude(script) {
     beta: {
       messages: {
         create: async (req) => {
-          requests.push(structuredClone(req));
+          const seen = structuredClone(req);
+          if (Array.isArray(seen.system)) seen.system = seen.system.map((b) => b.text).join(''); // os testes leem o texto
+          for (const m of seen.messages) if (Array.isArray(m.content) && m.content.length === 1 && m.content[0].type === 'text') m.content = m.content[0].text;
+          requests.push(seen);
           const next = queue.shift();
           if (!next) throw new Error('roteiro do Claude falso acabou');
           return typeof next === 'function' ? next(req) : next;

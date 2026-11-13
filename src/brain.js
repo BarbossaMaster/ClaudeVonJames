@@ -571,7 +571,14 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
   async function run({ system, tools, handlers, conversationId, text, channel, effort, context = '', fast = false, model = config.model, trace = {} }) {
     // Rastro do turno, mostrado no painel do app: voltas ao modelo, ferramentas usadas e tokens.
     trace.steps = 0; trace.tools = []; trace.tokensIn = 0; trace.tokensOut = 0;
-    const history = store.history(conversationId, HISTORY_TURNS);
+    // A janela do histórico anda em saltos de 20 turnos, não a cada mensagem: assim o começo da conversa
+    // enviada ao modelo fica idêntico por muitas mensagens seguidas e o cache o reaproveita (mais rápido e mais barato).
+    let history = store.history(conversationId, HISTORY_TURNS + 20);
+    if (history.length > HISTORY_TURNS) {
+      let start = history.length - HISTORY_TURNS;
+      for (let i = start; i >= 0; i--) if (history[i].id % 20 === 0) { start = i; break; }
+      history = history.slice(start);
+    }
     const messages = [];
     for (const t of history) {
       const last = messages[messages.length - 1];
@@ -585,7 +592,11 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
     const userContent = `${stamp}${context ? `\n${context}` : ''}\n\n${text}`;
     const last = messages[messages.length - 1];
     if (last?.role === 'user') last.content += `\n\n${userContent}`;
-    else messages.push({ role: 'user', content: userContent });
+    else {
+      // Marca de cache no fim do histórico: tudo até aqui é igual ao que foi enviado na mensagem anterior.
+      if (last) last.content = [{ type: 'text', text: last.content, cache_control: { type: 'ephemeral' } }];
+      messages.push({ role: 'user', content: userContent });
+    }
 
     store.addTurn(conversationId, 'user', text);
 
@@ -601,7 +612,8 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
         // O modo rápido só existe em alguns modelos; nos outros o parâmetro daria erro.
         ...(fast && /opus-5-5|fable-5-2|mythos-5-2/.test(model) ? { speed: 'fast' } : {}),
         cache_control: { type: 'ephemeral' },
-        system,
+        // As instruções e as ferramentas não mudam entre mensagens: ficam em cache.
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         tools,
         messages,
       });
