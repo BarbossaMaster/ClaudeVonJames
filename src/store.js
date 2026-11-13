@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS events (
@@ -225,6 +225,17 @@ export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
     alreadySeen(id) {
       const r = db.prepare('INSERT OR IGNORE INTO seen (id, ts) VALUES (?, ?)').run(id, now());
       return r.changes === 0;
+    },
+
+    /** Cópia inteira do banco ao lado dele (guarda as 5 mais recentes). Devolve o nome do arquivo. */
+    backup() {
+      if (path === ':memory:') return null;
+      const dir = join(dirname(path), 'backups');
+      mkdirSync(dir, { recursive: true });
+      const name = `jarvis-${new Date().toISOString().replace(/[:.]/g, '-')}.db`;
+      db.exec(`VACUUM INTO '${join(dir, name).replace(/'/g, "''")}'`);
+      for (const old of readdirSync(dir).filter((f) => f.endsWith('.db')).sort().slice(0, -5)) rmSync(join(dir, old), { force: true });
+      return name;
     },
 
     close() {
