@@ -2128,22 +2128,41 @@
   }
   if (token) setTimeout(bootGreeting, 1500);
 
-  // Recarrega a página sozinha quando o código dela muda no servidor.
-  let pageSig = null;
+  // Recarrega a página sozinha quando o código dela muda no servidor, mas só em hora segura:
+  // nunca no meio de uma conversa (ouvindo, pensando, falando, modo Conversa) nem logo depois de um toque ou de uma resposta.
+  // No iPhone uma recarga derruba o microfone e o som liberado, e era isso que travava a escuta seguinte.
+  let pageSig = null, pageStale = false, lastTouchAt = Date.now();
+  for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => { lastTouchAt = Date.now(); }, { passive: true, capture: true });
+  const QUIET_MS = 3 * 60 * 1000;
+  function safeToReload() {
+    const typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (handsFree || listening || typing || state !== 'idle') return false;
+    return Date.now() - Math.max(lastTouchAt, lastReplyAt || 0) > QUIET_MS;
+  }
   async function checkPageVersion() {
     try {
-      const res = await fetch('/index.html', { cache: 'no-store' });
-      if (!res.ok) return;
-      const sig = (await res.text()).length + ':' + res.headers.get('etag');
-      if (pageSig === null) { pageSig = sig; return; }
-      if (sig === pageSig) return;
-      const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
-      if (handsFree || typing || state === 'speaking' || state === 'thinking') return;
-      location.reload();
+      if (!pageStale) {
+        // Só o cabeçalho: não baixa a página inteira a cada minuto.
+        const res = await fetch('/index.html', { method: 'HEAD', cache: 'no-store' });
+        if (!res.ok) return;
+        const sig = res.headers.get('etag') || res.headers.get('content-length') || '';
+        if (!sig) return;
+        if (pageSig === null) { pageSig = sig; return; }
+        if (sig === pageSig) return;
+        pageStale = true;
+      }
+      if (safeToReload()) location.reload();
     } catch {}
   }
   checkPageVersion();
   setInterval(() => document.visibilityState === 'visible' && checkPageVersion(), 60000);
+  // Ao voltar para o app depois de um tempo fora, atualiza na hora se houver versão nova (ninguém está no meio de nada).
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+    if (pageStale && hiddenAt && Date.now() - hiddenAt > 20000 && !handsFree && !listening && state === 'idle') location.reload();
+    else checkPageVersion();
+  });
 })();
 </script>
 </body>
