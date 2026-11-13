@@ -322,6 +322,69 @@
   #dock .core { filter: drop-shadow(0 0 22px rgba(238, 98, 12, .18)); }
   @media (prefers-reduced-motion: reduce) { .view, .badge::after { animation: none; } }
   @media (max-width: 640px) { .view form.grid, .view details { padding: 14px 12px 12px; } .grid .row { grid-template-columns: 1fr 1fr; } .grid .row > :last-child { grid-column: 1 / -1; } .view { padding-bottom: 150px; } }
+  /* ---------- Abas com corpo: colunas, cartão do próximo compromisso, calendário, mostradores e prévias ---------- */
+  .view.wide { max-width: 1080px; }
+  .cols { display: grid; grid-template-columns: 1fr; gap: 26px; align-items: start; }
+  .col { min-width: 0; }
+  .panel { position: relative; padding: 20px; border: 1px solid var(--line); border-radius: 3px; background: linear-gradient(180deg, rgba(255, 255, 255, .028), rgba(255, 255, 255, .004)); }
+  .panel::before, .panel::after { content: ""; position: absolute; width: 10px; height: 10px; pointer-events: none; border: 1px solid color-mix(in srgb, var(--green) 70%, transparent); }
+  .panel::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+  .panel::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+  .panel + .panel { margin-top: 18px; }
+
+  .hero { overflow: hidden; padding: 24px 22px 22px; background: radial-gradient(120% 140% at 0% 0%, rgba(238, 122, 26, .13), transparent 58%), linear-gradient(180deg, rgba(255, 255, 255, .03), transparent); }
+  .hero small { display: block; font: 10px/1.6 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--green); }
+  .hero b { display: block; margin-top: 10px; font-size: 30px; font-weight: 200; letter-spacing: -.01em; line-height: 1.15; color: var(--purple); text-shadow: 0 0 26px rgba(238, 122, 26, .35); font-variant-numeric: tabular-nums; }
+  .hero span { display: block; margin-top: 8px; font-size: 15px; color: var(--text); }
+  .hero em { display: inline-block; margin-top: 14px; font: 10px/1 ui-monospace, Menlo, monospace; font-style: normal; letter-spacing: .12em; text-transform: uppercase; color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 40%, transparent); border-radius: 99px; padding: 6px 10px; }
+  .hero em:empty { display: none; }
+
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .cal-head b { font: 11px/1 ui-monospace, "SF Mono", Menlo, monospace; font-weight: 400; letter-spacing: .16em; text-transform: uppercase; }
+  .cal-head button { width: 28px; height: 28px; border-radius: 50%; color: var(--muted); font-size: 18px; line-height: 1; transition: color .2s, background .2s; }
+  .cal-head button:hover { color: var(--green); background: rgba(255, 255, 255, .04); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-grid span { text-align: center; font: 9px/2.2 ui-monospace, Menlo, monospace; letter-spacing: .1em; color: var(--muted); }
+  .cal-grid button { position: relative; aspect-ratio: 1; max-height: 44px; width: 100%; border-radius: 3px; font-size: 13px; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--text) 78%, var(--muted)); transition: background .2s, color .2s, box-shadow .2s; }
+  .cal-grid button:hover { background: rgba(255, 255, 255, .05); color: var(--text); }
+  .cal-grid button.past { color: var(--faint); }
+  .cal-grid button.today { color: var(--purple); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 70%, transparent), 0 0 14px -4px var(--green); }
+  .cal-grid button.sel { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--purple); }
+  .cal-grid button.has::after { content: ""; position: absolute; left: 50%; bottom: 5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #F08A2A; box-shadow: 0 0 6px #F08A2A; }
+
+  .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 4px 0 26px; }
+  .tile { position: relative; overflow: hidden; padding: 16px 16px 18px; border: 1px solid var(--line); border-radius: 3px; background: linear-gradient(180deg, rgba(255, 255, 255, .028), transparent); }
+  .tile b { display: block; font-size: 28px; font-weight: 200; font-variant-numeric: tabular-nums; line-height: 1.1; color: var(--purple); }
+  .tile span { display: block; margin-top: 6px; font: 9px/1.4 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .tile i { position: absolute; left: 0; bottom: 0; height: 2px; width: var(--w, 0%); background: linear-gradient(90deg, #F08A2A, var(--green)); box-shadow: 0 0 10px #F08A2A; transition: width .8s cubic-bezier(.2, .7, .2, 1); }
+  .tile svg { position: absolute; right: 12px; top: 16px; width: 72px; height: 22px; fill: none; stroke: color-mix(in srgb, var(--green) 55%, transparent); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .ghost .tile b { color: var(--faint); }
+
+  .chart { padding: 18px 18px 14px; margin-bottom: 8px; }
+  .chart svg { display: block; width: 100%; height: 150px; fill: none; }
+  .chart .rule path { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .chart .area { fill: rgba(238, 122, 26, .06); }
+  .chart .line { stroke: #F08A2A; stroke-width: 1.3; stroke-dasharray: 1; stroke-dashoffset: 1; filter: drop-shadow(0 0 5px rgba(238, 122, 26, .7)); animation: trace 9s ease-in-out infinite; }
+  .chart .line.two { stroke: color-mix(in srgb, var(--green) 55%, transparent); filter: none; animation-delay: .8s; }
+  @keyframes trace { 0% { stroke-dashoffset: 1; } 38%, 82% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
+  .chart small { display: block; margin-top: 10px; font: 9px/1.4 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+
+  .shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 4px 0 8px; }
+  .shot { position: relative; padding: 10px 10px 12px; border: 1px solid var(--line); border-radius: 3px; background: linear-gradient(180deg, rgba(255, 255, 255, .028), transparent); }
+  .shot svg { display: block; width: 100%; aspect-ratio: 4 / 5; border: 1px dashed var(--faint); border-radius: 2px; fill: none; stroke: color-mix(in srgb, var(--green) 50%, transparent); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; background: radial-gradient(80% 60% at 50% 40%, rgba(238, 122, 26, .07), transparent); }
+  .shot span { display: block; margin: 10px 0 8px; font: 9px/1 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .shot i { display: block; height: 3px; border-radius: 2px; background: var(--line); margin-top: 5px; }
+  .shot i + i { width: 60%; }
+  .shots .shot:nth-child(5) { display: none; }
+  @media (min-width: 900px) {
+    .cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 34px; }
+    #view-agenda .cols { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); }
+    .tiles { grid-template-columns: repeat(4, 1fr); }
+    .shots { grid-template-columns: repeat(5, 1fr); }
+    .shots .shot:nth-child(5) { display: block; }
+    .view.wide { padding-right: 150px; } /* espaço para ele, no canto */
+  }
+  @media (prefers-reduced-motion: reduce) { .chart .line { animation: none; stroke-dashoffset: 0; } }
 </style>
 </head>
 <body>
@@ -347,9 +410,24 @@
   <button role="tab" data-view="criativos" aria-selected="false">Criativos<small>em obra</small></button>
 </nav>
 
-<section class="view" id="view-agenda" hidden>
+<section class="view wide" id="view-agenda" hidden>
   <h2>Agenda</h2>
   <p class="lead">Seus compromissos. Marque aqui ou peça por voz: "marca uma demonstração com a Ana amanhã às três da tarde". O resumo das 18h traz o que vem a seguir.</p>
+  <div class="cols">
+  <div class="col">
+    <div class="panel hero" id="appt-hero">
+      <small>Próximo compromisso</small>
+      <b id="hero-when">Agenda livre</b>
+      <span id="hero-title">Nada marcado à frente.</span>
+      <em id="hero-in"></em>
+    </div>
+    <div class="panel cal" aria-label="Calendário do mês">
+      <div class="cal-head"><button type="button" id="cal-prev" aria-label="Mês anterior">‹</button><b id="cal-title"></b><button type="button" id="cal-next" aria-label="Próximo mês">›</button></div>
+      <div class="cal-grid" id="cal-grid"></div>
+    </div>
+  </div>
+  <div class="col">
+  <h3 style="margin-top:0">Marcar</h3>
   <form class="grid" id="apptform" autocomplete="off">
     <input type="text" id="appt-title" placeholder="O que é e com quem" maxlength="160" required aria-label="Compromisso">
     <div class="row">
@@ -360,16 +438,27 @@
     <button class="btn" type="submit">Marcar</button>
     <div class="err" id="appt-err"></div>
   </form>
+  <h3>O que vem</h3>
   <div id="apptlist"></div>
   <p id="apptempty" class="lead" style="margin-top:22px">Nenhum compromisso marcado.</p>
   <p style="margin-top:26px"><a class="linkish" id="icslink" href="#" target="_blank" rel="noopener">Ver no calendário do celular (endereço para assinar)</a></p>
+  </div>
+  </div>
 </section>
 
-<section class="view" id="view-email" hidden>
+<section class="view wide" id="view-email" hidden>
   <span class="badge">Envio em construção</span>
   <h2>E-mail marketing</h2>
   <p class="lead">Lista de contatos e rascunhos de campanha já funcionam. Peça ao Guardião: "escreve um e-mail para os interessados sobre a Black Friday". O envio liga quando você escolher o serviço (Brevo, Mailchimp ou Resend).</p>
-  <h3>Contatos <span id="mail-counts"></span></h3>
+  <div class="tiles" id="mail-tiles">
+    <div class="tile"><b id="mt-total">0</b><span>Contatos</span><i></i></div>
+    <div class="tile"><b id="mt-int">0</b><span>Interessados</span><i></i></div>
+    <div class="tile"><b id="mt-demo">0</b><span>Em demonstração</span><i></i></div>
+    <div class="tile"><b id="mt-cli">0</b><span>Clientes</span><i></i></div>
+  </div>
+  <div class="cols">
+  <div class="col">
+  <h3 style="margin-top:0">Contatos <span id="mail-counts" hidden></span></h3>
   <form class="grid" id="contactform" autocomplete="off">
     <div class="row">
       <input type="text" id="c-name" placeholder="Nome" maxlength="120" aria-label="Nome">
@@ -384,29 +473,62 @@
     <button class="btn" id="c-import" type="button">Importar</button>
   </details>
   <div id="contactlist" style="margin-top:14px"></div>
-  <h3>Rascunhos de campanha</h3>
+  </div>
+  <div class="col">
+  <h3 style="margin-top:0">Rascunhos de campanha</h3>
   <p id="draftsempty" class="lead">Nenhum rascunho ainda.</p>
   <div id="draftlist"></div>
+  </div>
+  </div>
 </section>
 
-<section class="view" id="view-ads" hidden>
+<section class="view wide" id="view-ads" hidden>
   <span class="badge">Em construção</span>
   <h2>Anúncios</h2>
   <p class="lead">Painel das campanhas do Facebook e Instagram, com leitura do Guardião sobre o que está funcionando.</p>
+  <div class="tiles ghost">
+    <div class="tile"><b>—</b><span>Gasto</span><svg viewBox="0 0 72 22" aria-hidden="true"><path d="M0 18 L12 14 L24 16 L36 9 L48 12 L60 5 L72 8"/></svg></div>
+    <div class="tile"><b>—</b><span>Alcance</span><svg viewBox="0 0 72 22" aria-hidden="true"><path d="M0 10 L12 13 L24 7 L36 11 L48 4 L60 9 L72 3"/></svg></div>
+    <div class="tile"><b>—</b><span>Cliques</span><svg viewBox="0 0 72 22" aria-hidden="true"><path d="M0 15 L12 16 L24 10 L36 12 L48 8 L60 10 L72 4"/></svg></div>
+    <div class="tile"><b>—</b><span>Custo por lead</span><svg viewBox="0 0 72 22" aria-hidden="true"><path d="M0 6 L12 9 L24 8 L36 13 L48 11 L60 16 L72 14"/></svg></div>
+  </div>
+  <div class="panel ghost chart" aria-hidden="true">
+    <svg viewBox="0 0 600 150" preserveAspectRatio="none"><g class="rule"><path d="M0 30H600M0 70H600M0 110H600"/></g><path class="area" d="M0 118 C60 104 90 112 150 88 S250 96 300 66 S400 78 450 44 S540 52 600 22 V150 H0Z"/><path class="line" pathLength="1" d="M0 118 C60 104 90 112 150 88 S250 96 300 66 S400 78 450 44 S540 52 600 22"/><path class="line two" pathLength="1" d="M0 132 C70 126 110 130 170 116 S270 120 320 104 S420 108 470 90 S550 92 600 76"/></svg>
+    <small>Prévia do painel · os números aparecem quando a conta for ligada</small>
+  </div>
+  <div class="cols">
+  <div class="col">
   <h3>O que vai ter</h3>
   <ul><li>Gasto, alcance, cliques, custo por lead e retorno, por campanha e por dia</li><li>Alerta quando o custo de uma campanha sobe ou o orçamento está acabando</li><li>Resumo semanal com o que pausar, manter e aumentar</li></ul>
+  </div>
+  <div class="col">
   <h3>O que falta para ligar</h3>
   <ul><li>Acesso à conta de anúncios da Meta, com um token da API de Marketing</li><li>O identificador da conta de anúncios</li></ul>
+  </div>
+  </div>
 </section>
 
-<section class="view" id="view-criativos" hidden>
+<section class="view wide" id="view-criativos" hidden>
   <span class="badge">Em construção</span>
   <h2>Criativos</h2>
   <p class="lead">Biblioteca das peças da marca, com desempenho de cada uma e novas ideias geradas pelo Guardião.</p>
+  <div class="shots ghost" aria-hidden="true">
+    <div class="shot"><svg viewBox="0 0 80 100" aria-hidden="true"><path d="M14 70 L32 46 L46 62 L56 52 L68 70Z"/><circle cx="54" cy="30" r="6"/></svg><span>Imagem</span><i></i><i></i></div>
+    <div class="shot"><svg viewBox="0 0 80 100" aria-hidden="true"><circle cx="40" cy="48" r="16"/><path d="M35 40 L49 48 L35 56Z"/></svg><span>Reels</span><i></i><i></i></div>
+    <div class="shot"><svg viewBox="0 0 80 100" aria-hidden="true"><path d="M14 70 L32 46 L46 62 L56 52 L68 70Z"/><circle cx="54" cy="30" r="6"/></svg><span>Carrossel</span><i></i><i></i></div>
+    <div class="shot"><svg viewBox="0 0 80 100" aria-hidden="true"><path d="M18 30H62M18 42H62M18 54H50M18 66H56"/></svg><span>Legenda</span><i></i><i></i></div>
+    <div class="shot"><svg viewBox="0 0 80 100" aria-hidden="true"><circle cx="40" cy="48" r="16"/><path d="M35 40 L49 48 L35 56Z"/></svg><span>Vídeo</span><i></i><i></i></div>
+  </div>
+  <div class="cols">
+  <div class="col">
   <h3>O que vai ter</h3>
   <ul><li>Imagens e vídeos organizados por campanha, com os números de cada peça</li><li>Roteiros de Reels, legendas e variações de texto no tom da Astro Gold</li><li>Geração de imagens e vídeos por um serviço externo, quando você escolher qual</li></ul>
+  </div>
+  <div class="col">
   <h3>O que falta para ligar</h3>
   <ul><li>A ligação com os anúncios (aba ao lado), de onde vêm os números</li><li>A escolha do serviço de geração de imagem e vídeo</li></ul>
+  </div>
+  </div>
 </section>
 
 <section class="stats" aria-label="Últimas 24 horas">
@@ -1746,6 +1868,9 @@
   function renderMailing(v) {
     const c = v.counts || {};
     $('mail-counts').textContent = c.total ? `· ${c.total} no total · ${c.interessado || 0} interessados · ${c.demonstracao || 0} em demonstração · ${c.cliente || 0} clientes` : '· nenhum ainda';
+    for (const [id, n] of [['mt-total', c.total || 0], ['mt-int', c.interessado || 0], ['mt-demo', c.demonstracao || 0], ['mt-cli', c.cliente || 0]]) {
+      $(id).textContent = n; $(id).parentNode.querySelector('i').style.setProperty('--w', (c.total ? Math.round((n / c.total) * 100) : 0) + '%');
+    }
     $('contactlist').replaceChildren(...(v.contacts || []).map((p) => {
       const row = document.createElement('div'); row.className = 'appt';
       const body = document.createElement('span'); body.textContent = p.name;
@@ -1786,7 +1911,38 @@
   $('c-import').addEventListener('click', async () => { if (await postContacts({ lines: $('c-lines').value }, $('c-err'))) $('c-lines').value = ''; });
 
   // ---------- Agenda ----------
+  // Calendário do mês e cartão do próximo compromisso.
+  let calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1), calEvents = [];
+  const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  function renderCal() {
+    const grid = $('cal-grid'), today = dayKey(new Date()), busy = new Set(calEvents.map((e) => e.day)), sel = $('appt-date').value;
+    $('cal-title').textContent = calMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    const cells = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((l) => { const h = document.createElement('span'); h.textContent = l; return h; });
+    for (let i = 0; i < calMonth.getDay(); i++) cells.push(document.createElement('span'));
+    const last = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0).getDate();
+    for (let d = 1; d <= last; d++) {
+      const key = dayKey(new Date(calMonth.getFullYear(), calMonth.getMonth(), d)), b = document.createElement('button');
+      b.type = 'button'; b.textContent = d;
+      b.className = [key === today ? 'today' : '', key < today ? 'past' : '', busy.has(key) ? 'has' : '', key === sel ? 'sel' : ''].join(' ').trim();
+      if (busy.has(key)) b.title = calEvents.filter((e) => e.day === key).map((e) => e.title).join(' · ');
+      b.addEventListener('click', () => { $('appt-date').value = key; renderCal(); $('appt-title').focus(); });
+      cells.push(b);
+    }
+    grid.replaceChildren(...cells);
+  }
+  $('cal-prev').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCal(); });
+  $('cal-next').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCal(); });
+  $('appt-date').addEventListener('change', renderCal);
+  function renderHero() {
+    const e = calEvents[0];
+    if (!e) { $('hero-when').textContent = 'Agenda livre'; $('hero-title').textContent = 'Nada marcado à frente.'; $('hero-in').textContent = ''; return; }
+    const at = new Date(e.start), mins = Math.max(0, Math.round((e.start - Date.now()) / 60000));
+    $('hero-when').textContent = at.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' }).replace(/\./g, '') + ' · ' + (e.when.match(/(\d{2}:\d{2})\s*$/) || [, ''])[1];
+    $('hero-title').textContent = e.title;
+    $('hero-in').textContent = mins < 60 ? `em ${mins} min` : mins < 1440 ? `em ${Math.round(mins / 60)} h` : `em ${Math.round(mins / 1440)} ${Math.round(mins / 1440) === 1 ? 'dia' : 'dias'}`;
+  }
   function renderAgenda(events) {
+    calEvents = events; renderCal(); renderHero();
     $('apptempty').hidden = events.length > 0;
     const days = new Map();
     for (const e of events) { if (!days.has(e.day)) days.set(e.day, []); days.get(e.day).push(e); }
