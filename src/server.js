@@ -2,6 +2,7 @@ import { loadConfig, ensureToken } from './config.js';
 import { openStore } from './store.js';
 import { createWhatsApp } from './whatsapp.js';
 import { createSpeech } from './speech.js';
+import { createLocalStt } from './localstt.js';
 import { createBrain } from './brain.js';
 import { createApp, createJarvis } from './app.js';
 import { startScheduler } from './briefing.js';
@@ -18,7 +19,9 @@ ensureToken(config);
 
 const store = openStore(config.dbPath);
 const whatsapp = createWhatsApp(config.whatsapp);
-const speech = createSpeech(config.speech);
+const localStt = createLocalStt({ config });
+const speech = createSpeech(config.speech, { local: localStt });
+localStt?.prepare();
 
 // O cérebro e o orquestrador dependem um do outro (avisar o dono / falar com contato).
 const documents = createDocuments({

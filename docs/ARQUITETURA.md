@@ -25,7 +25,7 @@ Um único processo Node faz tudo: serve o app, fala com o Claude, guarda os dado
 |---|---|---|
 | Servidor | Node.js 22 + Express, JavaScript puro (ESM) | Sem etapa de build; sobe com `npm start` |
 | Banco | SQLite embutido do Node (`node:sqlite`) | Nenhum serviço a mais; um arquivo no volume |
-| Cérebro | Claude Sonnet 5.5 (trocável por `JARVIS_MODEL`) pelo SDK oficial `@anthropic-ai/sdk` | Raciocínio e uso de ferramentas |
+| Cérebro | Claude Sonnet 5.5 (fixo) pelo SDK oficial `@anthropic-ai/sdk` | Raciocínio e uso de ferramentas |
 | Voz (fala) | ElevenLabs; OpenAI como alternativa; voz do aparelho como reserva | Voz natural, com queda suave se faltar crédito |
 | Voz (escuta) | Reconhecimento de voz do navegador (Web Speech API) | Sem custo; roda no próprio iPhone |
 | PDF | `pdfkit` | Gera no servidor, sem navegador headless |
@@ -81,7 +81,9 @@ Como uma resposta é produzida:
 4. Se o Claude pedir uma ferramenta, o servidor executa e devolve o resultado; repete até ele terminar (no máximo 8 voltas).
 5. Guarda a pergunta e a resposta final no banco.
 
-**Troca automática de modelo.** Antes de responder ao dono, o servidor escolhe o modelo: Claude Sonnet 5.5 para conversa comum e Claude Opus 5.5 para assunto importante (análise, estratégia, dinheiro, documentos, texto para cliente). Mensagens curtas e pedidos explícitos ("pensa bem", "usa o Opus") são decididos na hora; o resto passa por um classificador rápido (Claude Haiku 5.5). Se a classificação falhar, vale o Sonnet. `JARVIS_ROUTER=off` desliga. O atendimento a clientes usa sempre o modelo do dia a dia.
+**Modelo único.** Toda conversa usa o Claude Sonnet 5.5, fixo no código por decisão de custo. A busca na internet fica limitada a uma por mensagem.
+
+**Transcrição local.** A fala gravada pelo app é transcrita no próprio servidor com o Whisper (`src/localstt.js` e `src/stt-worker.js`), o mesmo motor do Vibe Local. O modelo é baixado uma vez para `data/models/`; a transcrição roda num processo à parte, criado na primeira fala e encerrado após três minutos sem uso. Enquanto o modelo não está no disco, ou se ele falhar, a transcrição paga (ElevenLabs ou OpenAI) assume. Áudios do WhatsApp, em outro formato, continuam no serviço pago.
 
 Parâmetros da chamada: raciocínio adaptativo, esforço médio por padrão (`JARVIS_VOICE_EFFORT`, `JARVIS_EFFORT`), cache de prompt e fallback automático de modelo em caso de recusa. Se a API falhar, o cliente recebe "vou confirmar com a equipe" e fica uma pendência para o dono.
 

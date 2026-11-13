@@ -4,20 +4,33 @@
  * - Escuta (STT), do app e dos áudios do WhatsApp: ElevenLabs se houver chave dela, senão OpenAI.
  * Sem nenhuma chave, o app web cai na voz do próprio navegador.
  */
-export function createSpeech(cfg, { fetchImpl = fetch } = {}) {
+export function createSpeech(cfg, { fetchImpl = fetch, local = null, log = console.error } = {}) {
   const openai = { Authorization: `Bearer ${cfg.openaiKey}` };
   const provider = cfg.elevenKey && cfg.elevenVoice ? 'elevenlabs' : cfg.openaiKey ? 'openai' : null;
 
   return {
     /** consegue transcrever áudio (do app ou do WhatsApp) */
-    enabled: Boolean(cfg.elevenKey || cfg.openaiKey),
-    listener: cfg.elevenKey ? 'elevenlabs' : cfg.openaiKey ? 'openai' : null,
+    enabled: Boolean(local || cfg.elevenKey || cfg.openaiKey),
+    /** quem transcreve: 'local' é o Whisper no próprio servidor, sem custo por uso */
+    get listener() { return local?.ready ? 'local' : cfg.elevenKey ? 'elevenlabs' : cfg.openaiKey ? 'openai' : local ? 'local' : null; },
+    local,
     /** consegue gerar voz */
     canSpeak: Boolean(provider),
     provider,
 
-    /** Áudio -> texto em português. Usa a ElevenLabs quando há chave dela; senão, a OpenAI. */
+    /**
+     * Áudio -> texto em português. A fala gravada pelo app (WAV) é transcrita no próprio servidor quando
+     * o modelo local está pronto. Fora disso (modelo ainda baixando, falha, áudio do WhatsApp em outro formato),
+     * usa a ElevenLabs quando há chave dela; senão, a OpenAI.
+     */
     async transcribe(buffer, mime = 'audio/ogg') {
+      if (local && mime.includes('wav') && (local.ready || !(cfg.elevenKey || cfg.openaiKey))) {
+        try { return await local.transcribe(buffer); } catch (e) {
+          if (!(cfg.elevenKey || cfg.openaiKey)) throw new Error(`transcrição local: ${e.message}`);
+          log('[jarvis] transcrição local falhou; usando o serviço pago desta vez:', e.message);
+        }
+      }
+      if (!(cfg.elevenKey || cfg.openaiKey)) throw new Error('este formato de áudio só é transcrito com uma chave de transcrição');
       const name = mime.includes('wav') ? 'audio.wav' : mime.includes('mpeg') ? 'audio.mp3' : mime.includes('mp4') ? 'audio.m4a' : 'audio.ogg';
       if (cfg.elevenKey) {
         const ask = async (withLanguage) => {

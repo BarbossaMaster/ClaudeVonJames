@@ -21,6 +21,13 @@ export function loadConfig(env = process.env) {
     // Escuta pelo servidor (o app grava, o servidor transcreve e reconhece a voz). Desligada por padrão:
     // só liga com JARVIS_SERVER_LISTEN=1, porque ainda precisa de teste no aparelho real.
     serverListen: /^(1|true|sim|on)$/i.test(env.JARVIS_SERVER_LISTEN || ''),
+    // Transcrição no próprio servidor (Whisper), sem serviço pago. JARVIS_LOCAL_STT escolhe o modelo:
+    // small (padrão, o mais fiel), base ou tiny (mais leves e rápidos, erram mais), ou off para desligar.
+    localStt: (() => { const v = String(env.JARVIS_LOCAL_STT || 'small').toLowerCase(); return /^(0|off|false|nao|não)$/.test(v) ? '' : ['tiny', 'base', 'small', 'medium'].includes(v) ? v : 'small'; })(),
+    localSttDir: join(dirname(env.JARVIS_DB || 'data/jarvis.db'), 'models'),
+    localSttThreads: Math.min(4, Math.max(1, num(env.JARVIS_LOCAL_STT_THREADS, 2))),
+    // Sem falas por este tempo, o processo de transcrição é encerrado e devolve a memória.
+    localSttIdleMs: Math.max(10, num(env.JARVIS_LOCAL_STT_IDLE_S, 180)) * 1000,
     // Reconhecimento de voz por pessoa: arquivo do modelo e nota mínima (0 a 1) para aceitar a voz.
     voiceprintModel: env.VOICEPRINT_MODEL || join(dirname(env.JARVIS_DB || 'data/jarvis.db'), 'models', 'voz.onnx'),
     voiceprintThreshold: Math.min(.95, Math.max(.2, num(env.VOICEPRINT_THRESHOLD, 0.5))),
@@ -39,11 +46,12 @@ export function loadConfig(env = process.env) {
     },
     // Busca na internet nas conversas com o dono (JARVIS_WEB=off desliga).
     webSearch: !/^(0|off|false|nao|não)$/i.test(env.JARVIS_WEB || ''),
-    // Modelo das conversas. Com JARVIS_ROUTER=on, assuntos importantes sobem sozinhos para JARVIS_SMART_MODEL.
-    model: env.JARVIS_MODEL || 'claude-sonnet-5-5',
-    smartModel: env.JARVIS_SMART_MODEL || 'claude-opus-5-5',
-    routerModel: env.JARVIS_ROUTER_MODEL || 'claude-haiku-5-5',
-    router: /^(1|on|true|sim)$/i.test(env.JARVIS_ROUTER || ''), // desligada por padrão: toda conversa usa JARVIS_MODEL
+    // Modelo das conversas: sempre o Claude Sonnet 5.5, por decisão do dono (custo). Não há variável que troque,
+    // e a subida automática para um modelo mais caro fica desligada.
+    model: 'claude-sonnet-5-5',
+    smartModel: 'claude-sonnet-5-5',
+    routerModel: 'claude-haiku-5-5',
+    router: false,
     // Profundidade de raciocínio: low | medium | high | xhigh | max. Mais alto pensa melhor, demora e custa mais.
     voiceEffort: effort(env.JARVIS_VOICE_EFFORT, 'medium'),
     textEffort: effort(env.JARVIS_EFFORT, 'medium'),
