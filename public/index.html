@@ -1577,7 +1577,12 @@
       runActions(actions); // ele mexe na tela enquanto fala
       if (documents.length) setTimeout(() => point(document.querySelector('#log .doc')), 300);
       const finishCues = followCues(reply, cues); // gestos sincronizados com a voz
-      if (channel === 'voice') { setState('speaking'); await speak(reply); }
+      if (channel === 'voice') {
+        setState('speaking');
+        try { localStorage.setItem('jv_cut', JSON.stringify({ text: reply, at: Date.now() })); } catch {} // se a página recarregar agora, ele sabe o que estava dizendo
+        await speak(reply);
+        try { localStorage.removeItem('jv_cut'); } catch {}
+      }
       finishCues();
       lastReplyAt = Date.now();
     } catch (e) {
