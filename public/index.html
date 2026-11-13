@@ -172,6 +172,17 @@
   .hud-row { width: 100%; max-width: 560px; display: flex; justify-content: space-between; gap: 12px; font: 10px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
   .hud-row > div:last-child { text-align: right; }
   #hud-sys { position: relative; } /* o pulso fica pendurado à esquerda, fora do texto, para as duas linhas alinharem */
+  /* Tempo em Limeira: símbolo pequeno animado e temperatura, ao lado da localização. */
+  .wxs { margin-left: 8px; white-space: nowrap; }
+  .wxs svg { width: 18px; height: 18px; vertical-align: -5px; margin-right: 4px; fill: none; stroke: #F08A2A; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; overflow: visible; filter: drop-shadow(0 0 3px rgba(238, 122, 26, .7)); }
+  .wxs .hot { stroke: #FFD54A; }
+  .wxs .spin { transform-origin: 32px 32px; animation: gspin 14s linear infinite; }
+  .wxs .spin2 { transform-origin: 22px 24px; animation: gspin 14s linear infinite; }
+  .wxs .drop { stroke-dasharray: 5 9; animation: gfall .9s linear infinite; }
+  .wxs .flash { animation: gflash 1.6s ease-in-out infinite; }
+  .wxs .drift { animation: gdrift 2.6s ease-in-out infinite; }
+  .wxs .tw { animation: gflash 2.2s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { .wxs * { animation: none !important; } }
   .hud-row b { font-weight: 500; color: var(--green); }
   .hud-row i { font-style: normal; color: var(--text); }
   /* Pulso de conhecimento: bate devagar o tempo todo e dispara quando ele aprende algo. */
