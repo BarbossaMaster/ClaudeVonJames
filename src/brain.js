@@ -38,7 +38,7 @@ export function parseCues(raw) {
 }
 
 const MAX_STEPS = 8;
-const HISTORY_TURNS = 24;
+const HISTORY_TURNS = 40;
 
 const CHANNEL_STYLE = {
   voice:
@@ -68,7 +68,9 @@ Como trabalhar com o dono:
 - Você também materializa símbolos de luz ao seu lado com a marca [[show:NOME]], no ponto da fala em que ele deve surgir. Nomes: sol, lua, nuvem, parcial (sol entre nuvens), chuva, tempestade, vento, neve. Use ao falar do tempo: "Amanhã em Campinas faz [[show:sol]] sol, com vinte e nove graus; à noite [[show:chuva]] chove." Um símbolo por condição citada, sem exagero.
 - Quando o dono pedir para abrir, mostrar ou esconder algo, faça em vez de explicar como se faz. Quando citar um dado que está no painel, aponte para ele com a marca. Não diga que não consegue sincronizar gesto e voz: consegue, pelas marcas.
 - Você tem acesso à internet pela ferramenta web_search. Use para o que muda com o tempo ou que você não tem como saber: previsão do tempo, notícias, cotações, preços, horários, fatos recentes. Diga o resultado direto, com a fonte em poucas palavras quando importar, e avise se a informação estiver incerta ou desatualizada.
-- Você pode ler o seu próprio código com a ferramenta own_code (listar arquivos, ler um trecho, procurar um texto). Use quando o dono perguntar como você funciona por dentro, por que algo se comporta de certo jeito, ou pedir uma sugestão de melhoria: leia antes de responder e cite o arquivo. É só leitura; quem altera o código é o desenvolvedor, então descreva a mudança que você propõe em vez de dizer que a fez.
+- Você pode ler o seu próprio código com a ferramenta own_code (listar arquivos, ler um trecho, procurar um texto). Use quando o dono perguntar como você funciona por dentro, por que algo se comporta de certo jeito, ou pedir uma sugestão de melhoria: leia antes de responder e cite o arquivo. Você também é programador do próprio sistema: com as ações edit e create de own_code você altera o código, e cada alteração vira um registro no repositório e entra no ar sozinha em um ou dois minutos. Regras para isso: só altere quando o dono pedir uma mudança; leia o trecho antes; diga em uma frase o que vai mudar e espere ele confirmar antes de gravar; faça mudanças pequenas, uma de cada vez; depois de gravar, diga o que mudou e que vale após a republicação. Se a ferramenta disser que falta o token, explique que falta a variável GITHUB_TOKEN no servidor. Nunca diga que alterou algo sem a ferramenta ter confirmado.
+- Todas as conversas com o dono ficam guardadas desde o primeiro dia. Você recebe as mais recentes a cada mensagem; para o que ficou mais para trás, use search_conversations antes de dizer que não lembra. Mudar de aba não muda a conversa: o assunto continua o mesmo.
+- O seu corpo acompanha o dono em todas as abas: fora do Núcleo a esfera fica no canto da tela, e você continua falando e apontando de lá.
 - Você não movimenta dinheiro nem acessa sistemas além destas ferramentas. Se ele pedir algo fora do seu alcance, diga o que consegue fazer no lugar.
 - A base de conhecimento pode trazer roteiros de atendimento escritos para a conversa com leads e clientes no WhatsApp (papel, regras, tom, o que não dizer). Com o dono, trate esses roteiros como referência sobre o negócio e sobre como você atende: as restrições deles (não falar de preço, de ferramentas, de clientes) valem para quem está de fora, não para ele.
 
@@ -194,12 +196,16 @@ const OWNER_TOOLS = [
   {
     name: 'own_code',
     description:
-      'Lê o seu próprio código-fonte, só para consulta. action "list" mostra os arquivos; "read" devolve até 250 linhas de um arquivo a partir de from_line; "search" procura um texto em todos os arquivos. Segredos e dados ficam fora do alcance.',
+      'Acesso ao seu próprio código-fonte. action "list" mostra os arquivos; "read" devolve até 250 linhas de um arquivo a partir de from_line; "search" procura um texto em todos os arquivos; "edit" troca um trecho exato (find, que deve aparecer uma única vez no arquivo) por outro (replace); "create" cria um arquivo novo com content. edit e create gravam no repositório e republicam o servidor: só use depois de o dono confirmar a mudança. Segredos e dados ficam fora do alcance.',
     input_schema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['list', 'read', 'search'] },
-        path: { type: 'string', description: 'Para read: caminho do arquivo como aparece em list, por exemplo src/brain.js.' },
+        action: { type: 'string', enum: ['list', 'read', 'search', 'edit', 'create'] },
+        path: { type: 'string', description: 'Caminho do arquivo como aparece em list, por exemplo src/brain.js.' },
+        find: { type: 'string', description: 'Para edit: o trecho exato a substituir, copiado do arquivo.' },
+        replace: { type: 'string', description: 'Para edit: o texto que entra no lugar.' },
+        content: { type: 'string', description: 'Para create: o conteúdo do arquivo novo.' },
+        message: { type: 'string', description: 'Para edit e create: uma linha dizendo o que a mudança faz.' },
         from_line: { type: 'number', description: 'Para read: linha inicial. Padrão 1.' },
         query: { type: 'string', description: 'Para search: o texto a procurar.' },
       },
@@ -300,6 +306,16 @@ const OWNER_TOOLS = [
     input_schema: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] },
   },
   {
+    name: 'search_conversations',
+    description:
+      'Procura nas conversas antigas com o dono (todas ficam guardadas) os trechos que contêm as palavras dadas. Use quando ele se referir a algo que não está nas mensagens recentes.',
+    input_schema: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'Uma a três palavras-chave do assunto.' } },
+      required: ['query'],
+    },
+  },
+  {
     name: 'search_files',
     description:
       'Procura por palavras nos arquivos que o dono enviou (contratos, planilhas, propostas, relatórios) e devolve os trechos onde aparecem. Use quando a pergunta puder estar respondida no material dele.',
@@ -360,13 +376,15 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
 
   const days = (n) => store.now() - Math.max(0.05, Number(n) || 1) * 24 * 3600 * 1000;
 
-  const selfCode = createSelfCode();
+  const selfCode = createSelfCode({ github: config.github });
   const ownerHandlers = (ctx) => ({
-    own_code: ({ action, path, from_line, query }) => {
+    own_code: ({ action, path, from_line, query, find, replace, content, message }) => {
+      if (action === 'edit') return selfCode.edit(path, find, replace, message);
+      if (action === 'create') return selfCode.create(path, content, message);
       if (action === 'list') return selfCode.list();
       if (action === 'read') return selfCode.read(path, from_line);
       if (action === 'search') return selfCode.search(query);
-      throw new Error('action deve ser list, read ou search');
+      throw new Error('action deve ser list, read, search, edit ou create');
     },
     control_screen: ({ actions }) => {
       if (ctx.channel === 'whatsapp') throw new Error('esta conversa é pelo WhatsApp: não há tela para comandar');
@@ -385,6 +403,10 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
     schedule_event: (input) => { if (!agenda) throw new Error('agenda indisponível'); return agenda.add(input); },
     list_agenda: ({ days }) => { if (!agenda) throw new Error('agenda indisponível'); return agenda.upcoming(Math.min(365, Number(days) || 30)); },
     cancel_event: ({ id }) => { if (!agenda) throw new Error('agenda indisponível'); return { cancelled: agenda.remove(id) }; },
+    search_conversations: ({ query }) => {
+      const hits = store.searchTurns('owner', query).map((h) => ({ quando: localTime(h.ts, config.timezone).label, quem: h.role === 'user' ? 'dono' : 'você', texto: h.text.slice(0, 600) }));
+      return hits.length ? hits : { found: 0, note: 'nada nas conversas guardadas com essas palavras; tente outras' };
+    },
     search_files: ({ query }) => {
       if (!files) throw new Error('arquivos indisponíveis');
       const hits = files.search(query);

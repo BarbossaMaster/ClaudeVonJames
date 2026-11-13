@@ -151,6 +151,10 @@
   @media (prefers-reduced-motion: reduce) { .glyph * { animation: none !important; } }
 
   /* Feixe: uma linha de luz que sai do núcleo e aponta a informação de que ele está tratando. */
+  /* Fora do Núcleo ele não some: fica num canto, menor, e continua apontando e falando. */
+  #dock { position: fixed; right: 14px; bottom: 14px; z-index: 5; }
+  #dock:empty { display: none; }
+  #dock .core { width: clamp(120px, 15vw, 190px) !important; background: none; border: 0; }
   #beamfx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 4; }
   .lit, .lit i { color: var(--purple) !important; text-shadow: 0 0 12px var(--green); transition: color .3s, text-shadow .3s; }
 
@@ -236,6 +240,7 @@
 </head>
 <body>
 <canvas id="beamfx" aria-hidden="true"></canvas>
+<div id="dock"></div>
 <header>
   <div class="brand"><span class="mark"><img src="logo.png" alt=""></span><h1 id="name"><span class="long">Guardião da </span><span id="brandname">marca</span></h1></div>
   <div class="actions">
@@ -514,7 +519,7 @@
   let glyphSide = 1;
   // O feixe vai até um ponto ao lado da esfera e o símbolo se forma ali quando a ponta chega; some ao fim do trecho.
   function spawnGlyph(name, arriveAt, hold) {
-    if (!GLYPHS[name] || view !== 'nucleo') return;
+    if (!GLYPHS[name]) return;
     const o = viz.getBoundingClientRect(), cx = o.left + o.width / 2, cy = o.top + o.height / 2;
     glyphSide = -glyphSide; // alterna os lados, para dois símbolos seguidos não nascerem um sobre o outro
     const ang = (-90 + glyphSide * (38 + Math.random() * 22)) * Math.PI / 180, dist = o.width * (.6 + Math.random() * .06);
@@ -559,7 +564,13 @@
       sparks: Array.from({ length: 5 + Math.floor(rnd() * 4) }, () => ({ at: rnd(), speed: .5 + rnd() * .9, size: .8 + rnd() * 1.1 })),
     };
   }
-  const findEl = (b) => (typeof b.target === 'string' ? document.querySelector(`[data-k="${b.target}"]`) : b.target);
+  // Alvo do gesto. Se ele está escondido (outra tela aberta), o braço vai até onde aquilo mora: o título da tela atual ou a aba do Núcleo.
+  const findEl = (b) => {
+    const el = typeof b.target === 'string' ? document.querySelector(`[data-k="${b.target}"]`) : b.target;
+    if (!el || el.getClientRects().length || view === 'nucleo') return el;
+    if (b.target === 'next' && view === 'agenda') return document.querySelector('#view-agenda h2');
+    return document.querySelector('nav.tabs button[data-view="nucleo"]');
+  };
   function arrive(b) {
     if (b.arrived) return; b.arrived = true;
     const el = findEl(b);
@@ -570,7 +581,7 @@
   function release(b) { if (b.released) return; b.released = true; const el = findEl(b); if (typeof b.target === 'string') litKeys.delete(b.target); if (el) el.classList.remove('lit'); }
   function addBeam(b) {
     // Sem a esfera na tela (outra aba) ou sem animação: a ação acontece na hora marcada, sem gesto.
-    if (still || view !== 'nucleo' || document.hidden) {
+    if (still || document.hidden) {
       setTimeout(() => { arrive(b); setTimeout(() => release(b), Math.max(300, b.hold)); }, Math.max(0, b.arriveAt - performance.now()));
       return;
     }
@@ -579,7 +590,7 @@
   }
   // Gesto sem hora marcada: entra depois do último que estiver agendado.
   function point(target, onArrive) {
-    if (!onArrive && (!hudOn || view !== 'nucleo' || document.hidden)) return;
+    if (!onArrive && ((!hudOn && view === 'nucleo') || document.hidden)) return;
     const now = performance.now(), grow = 520 + Math.random() * 260, hold = 950 + Math.random() * 350, back = 420 + Math.random() * 200;
     const arriveAt = Math.max(now, freeAt) + grow;
     freeAt = arriveAt + hold + back * .5;
@@ -597,7 +608,7 @@
 
   function drawBeams(now) {
     fg.clearRect(0, 0, innerWidth, innerHeight);
-    const o = viz.getBoundingClientRect(), cx = o.left + o.width / 2, cy = o.top + o.height / 2, gone = view !== 'nucleo' || !o.width;
+    const o = viz.getBoundingClientRect(), cx = o.left + o.width / 2, cy = o.top + o.height / 2, gone = !o.width;
     for (let n = beams.length - 1; n >= 0; n--) {
       const b = beams[n], e = now - (b.arriveAt - b.grow), tsec = now / 1000;
       const el = findEl(b);
@@ -842,7 +853,6 @@
   }
 
   function draw(t) {
-    if (view !== 'nucleo') { lastT = t; return requestAnimationFrame(draw); } // outra aba aberta: não gasta bateria
     const dt = Math.min(.05, (t - lastT) / 1000 || 0); lastT = t;
     const tg = TARGET[orb.dataset.state] || TARGET.idle, ease = still ? 1 : Math.min(1, dt * 4);
     for (const k in cur) cur[k] += (tg[k] - cur[k]) * ease;
@@ -1511,7 +1521,7 @@
           remember: 'novo saber', create_document: 'documento em redação',
           add_contact: 'contato adicionado', list_contacts: 'consultando os contatos', draft_campaign: 'rascunho de e-mail salvo',
           add_reminder: 'pendência anotada', complete_reminder: 'pendência concluída',
-          control_screen: 'comandando a tela', web_search: '<b>pesquisando na internet</b>', own_code: 'lendo o próprio código',
+          control_screen: 'comandando a tela', web_search: '<b>pesquisando na internet</b>', own_code: 'no próprio código', search_conversations: 'lembrando conversas',
           schedule_event: 'compromisso marcado', list_agenda: 'consultando a agenda', cancel_event: 'compromisso desmarcado',
           search_files: 'procurando nos arquivos', read_file: 'lendo um arquivo',
         };
@@ -1607,7 +1617,11 @@
     for (const v of document.querySelectorAll('.view')) v.hidden = v.id !== 'view-' + name;
     document.querySelector('.stats').hidden = name !== 'nucleo';
     document.querySelector('.stage').hidden = name !== 'nucleo';
-    if (name === 'nucleo') requestAnimationFrame(fit);
+    // A esfera acompanha: no Núcleo fica no centro; nas outras telas, no canto, viva e com os braços.
+    const orbEl = $('orb');
+    if (name === 'nucleo') { if (orbEl.parentNode.id === 'dock') $('wave').before(orbEl); }
+    else if (orbEl.parentNode.id !== 'dock') $('dock').appendChild(orbEl);
+    requestAnimationFrame(() => { fit(); if (still) draw(0); });
     if (name === 'agenda') loadAgenda();
     if (name === 'email') loadMailing();
   }

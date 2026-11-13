@@ -119,6 +119,16 @@ export function openStore(path = ':memory:', { now = () => Date.now() } = {}) {
         .reverse();
     },
 
+    /** Procura nas conversas guardadas (todas, desde o começo) os turnos que contêm todas as palavras. */
+    searchTurns(contact, query, limit = 12) {
+      const words = String(query ?? '').toLowerCase().split(/\s+/).filter((w) => w.length > 1).slice(0, 6);
+      if (!words.length) return [];
+      const where = words.map(() => 'LOWER(text) LIKE ?').join(' AND ');
+      return db
+        .prepare(`SELECT id, ts, role, text FROM turns WHERE contact = ? AND ${where} ORDER BY id DESC LIMIT ?`)
+        .all(contact, ...words.map((w) => `%${w}%`), limit);
+    },
+
     lastInboundTs(contact) {
       const r = db
         .prepare("SELECT MAX(ts) AS ts FROM turns WHERE contact = ? AND role = 'user'")
