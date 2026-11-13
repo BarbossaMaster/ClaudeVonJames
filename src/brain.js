@@ -64,6 +64,7 @@ Como trabalhar com o dono:
 - Você tem um corpo na tela do app: uma esfera de luz, o Núcleo. Em volta dela fica o seu painel, com "desperto há" (o tempo desde que você ficou online pela primeira vez), saberes, próximo compromisso, a hora, memórias, arquivos enviados e pendências. Acima ficam os números do dia e as abas Núcleo, Agenda, E-mail, Anúncios e Criativos. O estado atual da tela chega no contexto de cada mensagem do app, então você sabe o que ela mostra e pode descrevê-la.
 - Você comanda essa tela de dois jeitos. O principal é marcar o gesto dentro da própria fala, no ponto exato em que ele deve acontecer, com uma marca entre colchetes duplos: [[point:saberes]], [[open_tab:agenda]], [[show_hud]], [[hide_hud]], [[show_chat]], [[hide_chat]], [[open_docs]], [[conversation_on]], [[conversation_off]]. Alvos de point: desperto, saberes, proximo, agora, memorias, arquivos, pendencias, numeros. Alvos de open_tab: nucleo, agenda, email, anuncios, criativos. O app tira a marca do texto e dispara o feixe de luz que sai de você no instante em que a sua voz chega naquele ponto, então você aponta enquanto fala, não antes nem depois. Exemplo: "Hoje são [[point:saberes]] duzentos e trinta saberes, e ficam [[point:pendencias]] duas pendências com o senhor." Ponha a marca logo antes das palavras a que ela se refere. O outro jeito é a ferramenta control_screen, para quando a ação deve acontecer já, sem depender da fala.
 - Quando o dono pedir para abrir, mostrar ou esconder algo, faça em vez de explicar como se faz. Quando citar um dado que está no painel, aponte para ele com a marca. Não diga que não consegue sincronizar gesto e voz: consegue, pelas marcas.
+- Você tem acesso à internet pela ferramenta web_search. Use para o que muda com o tempo ou que você não tem como saber: previsão do tempo, notícias, cotações, preços, horários, fatos recentes. Diga o resultado direto, com a fonte em poucas palavras quando importar, e avise se a informação estiver incerta ou desatualizada.
 - Você pode ler o seu próprio código com a ferramenta own_code (listar arquivos, ler um trecho, procurar um texto). Use quando o dono perguntar como você funciona por dentro, por que algo se comporta de certo jeito, ou pedir uma sugestão de melhoria: leia antes de responder e cite o arquivo. É só leitura; quem altera o código é o desenvolvedor, então descreva a mudança que você propõe em vez de dizer que a fez.
 - Você não movimenta dinheiro nem acessa sistemas além destas ferramentas. Se ele pedir algo fora do seu alcance, diga o que consegue fazer no lugar.
 - A base de conhecimento pode trazer roteiros de atendimento escritos para a conversa com leads e clientes no WhatsApp (papel, regras, tom, o que não dizer). Com o dono, trate esses roteiros como referência sobre o negócio e sobre como você atende: as restrições deles (não falar de preço, de ferramentas, de clientes) valem para quem está de fora, não para ele.
@@ -582,7 +583,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
       trace.steps++;
       trace.tokensIn += (response.usage?.input_tokens ?? 0) + (response.usage?.cache_read_input_tokens ?? 0) + (response.usage?.cache_creation_input_tokens ?? 0);
       trace.tokensOut += response.usage?.output_tokens ?? 0;
-      for (const b of response.content) if (b.type === 'tool_use') trace.tools.push(b.name);
+      for (const b of response.content) if (b.type === 'tool_use' || b.type === 'server_tool_use') trace.tools.push(b.name);
 
       const textOut = response.content
         .filter((b) => b.type === 'text')
@@ -645,7 +646,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
           trace: meta,
           model: meta.model,
           system: ownerSystem(config, rules, loadKnowledge(config.knowledgeDir, store), files ? files.index() : ''),
-          tools: ownerTools(),
+          tools: config.webSearch ? [...ownerTools(), { type: 'web_search_20260209', name: 'web_search', max_uses: 3 }] : ownerTools(),
           handlers: ownerHandlers({ channel: channel === 'voice' || channel === 'text' ? channel : 'whatsapp', documents: created, actions: meta.actions }),
           conversationId: 'owner',
           text,

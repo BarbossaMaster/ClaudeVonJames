@@ -748,3 +748,25 @@ test('fala com tempos: ElevenLabs devolve áudio e o instante de cada letra; se 
     assert.equal(await b.text(), 'mp3');
   } finally { await ok.close(); await bad.close(); }
 });
+
+test('internet: a busca entra nas ferramentas do dono, o texto final junta os blocos, e o cliente não ganha acesso', async () => {
+  const searched = {
+    stop_reason: 'end_turn',
+    content: [
+      { type: 'server_tool_use', id: 'st1', name: 'web_search', input: { query: 'previsão do tempo Campinas amanhã' } },
+      { type: 'web_search_tool_result', tool_use_id: 'st1', content: [{ type: 'web_search_result', url: 'https://exemplo', title: 'Tempo' }] },
+      { type: 'text', text: 'Amanhã em Campinas: ' },
+      { type: 'text', text: 'sol com 29 graus.' },
+    ],
+  };
+  const t = setup({ script: [searched, say('Olá!')], env: { JARVIS_WEB: 'on' } });
+  const meta = {};
+  const reply = await t.brain.owner('como vai estar o tempo em Campinas amanhã?', { channel: 'voice', meta });
+  assert.equal(reply, 'Amanhã em Campinas: sol com 29 graus.');
+  const tool = t.client.requests[0].tools.at(-1);
+  assert.deepEqual(tool, { type: 'web_search_20260209', name: 'web_search', max_uses: 3 });
+  assert.deepEqual(meta.tools, ['web_search']);
+  await t.brain.contact('e o tempo aí?', { contact: '5521999990000' });
+  assert.deepEqual(t.client.requests[1].tools.map((x) => x.name), ['escalate_to_owner']);
+  assert.equal(setup().client.requests.length, 0);
+});

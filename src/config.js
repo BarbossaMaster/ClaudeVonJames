@@ -31,6 +31,8 @@ export function loadConfig(env = process.env) {
     // Token que protege o app de voz e a API de eventos.
     token: env.JARVIS_TOKEN || '',
 
+    // Busca na internet nas conversas com o dono (JARVIS_WEB=off desliga).
+    webSearch: !/^(0|off|false|nao|não)$/i.test(env.JARVIS_WEB || ''),
     // Modelo das conversas. Com JARVIS_ROUTER=on, assuntos importantes sobem sozinhos para JARVIS_SMART_MODEL.
     model: env.JARVIS_MODEL || 'claude-sonnet-5-5',
     smartModel: env.JARVIS_SMART_MODEL || 'claude-opus-5-5',

@@ -41,7 +41,9 @@ export function setup({ script = [], env = {}, speech } = {}) {
     WHATSAPP_VERIFY_TOKEN: 'verifica',
     KNOWLEDGE_DIR: '/nonexistent',
     JARVIS_SERVER_LISTEN: '1',
-    JARVIS_ROUTER: 'off', // a troca automática de modelo é testada à parte
+    JARVIS_ROUTER: 'off',
+    JARVIS_WEB: 'off', // a busca na internet é testada à parte
+ // a troca automática de modelo é testada à parte
 
     ...env,
   });
