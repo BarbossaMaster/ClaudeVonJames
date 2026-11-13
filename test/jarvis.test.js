@@ -136,7 +136,7 @@ test('áudio no WhatsApp: transcreve, responde em áudio; sem voz configurada pe
   const a = setup({ script: [say('Tudo em ordem, senhor.')], speech });
   await a.jarvis.handleWhatsApp({ id: 'a1', from: OWNER, type: 'audio', audioId: 'media1' });
   assert.equal(a.sent[0].audio.toString(), 'voice:Tudo em ordem, senhor.');
-  assert.equal(a.client.requests[0].tools.length, 17, 'áudio do dono usa as ferramentas do dono');
+  assert.equal(a.client.requests[0].tools.length, 18, 'áudio do dono usa as ferramentas do dono');
 
   const b = setup();
   await b.jarvis.handleWhatsApp({ id: 'a1', from: CLIENT, type: 'audio', audioId: 'media1' });
@@ -678,4 +678,46 @@ test('controle da tela: o James enxerga o estado do app e manda abrir abas e apo
   } finally {
     await close();
   }
+});
+
+test('gestos dentro da fala: as marcas saem do texto e viram deixas com a posição certa', async () => {
+  const { parseCues } = await import('../src/brain.js');
+  const p = parseCues('Hoje são [[point:saberes]] duzentos e trinta saberes, e ficam [[ point : Pendências ]] duas pendências. [[open_tab:agenda]] Abri a agenda. [[voar:lua]] [[point:lua]]');
+  assert.equal(p.text, 'Hoje são duzentos e trinta saberes, e ficam duas pendências. Abri a agenda.');
+  assert.deepEqual(p.cues.map((c) => `${c.action}:${c.target}`), ['point:saberes', 'point:pendencias', 'open_tab:agenda']);
+  assert.equal(p.text.slice(p.cues[0].at).trim().startsWith('duzentos e trinta saberes'), true, 'a deixa cai logo antes das palavras a que se refere');
+  assert.equal(p.text.slice(p.cues[1].at).trim().startsWith('duas pendências'), true);
+
+  const t = setup({ script: [say('São [[point:saberes]] duzentos saberes.'), say('São [[point:saberes]] duzentos saberes.')] });
+  const { base, close } = await serve(t.app);
+  try {
+    const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+    const chat = await (await fetch(`${base}/api/chat`, { method: 'POST', headers: h, body: JSON.stringify({ text: 'quantos saberes?', channel: 'voice' }) })).json();
+    assert.equal(chat.reply, 'São duzentos saberes.');
+    assert.deepEqual(chat.cues, [{ at: 3, action: 'point', target: 'saberes' }]);
+    assert.equal(t.store.history('owner', 5).at(-1).text, 'São duzentos saberes.', 'o histórico fica sem as marcas');
+    // no WhatsApp a marca some e não vira gesto
+    await t.jarvis.handleWhatsApp({ id: 'c1', from: '551188887777', type: 'text', text: 'quantos saberes?' });
+    assert.equal(t.sent.at(-1).text, 'São duzentos saberes.');
+  } finally {
+    await close();
+  }
+});
+
+test('acesso ao próprio código: lista, lê e procura; segredos e dados ficam de fora', async () => {
+  const t = setup({ script: [use('own_code', { action: 'search', query: 'createBrain' }), say('Está em src/brain.js.')] });
+  await t.brain.owner('onde fica o seu cérebro no código?');
+  const hits = JSON.parse(t.client.requests[1].messages.at(-1).content[0].content);
+  assert.ok(hits.some((x) => x.path === 'src/brain.js'));
+
+  const { createSelfCode } = await import('../src/selfcode.js');
+  const code = createSelfCode();
+  const files = code.list().map((f) => f.path);
+  assert.ok(files.includes('src/brain.js') && files.includes('public/index.html'));
+  assert.ok(!files.some((f) => /node_modules|^data\/|\.env$|package-lock/.test(f)));
+  const part = code.read('src/util.js', 1);
+  assert.match(part.text, /timingSafeEqual/);
+  assert.throws(() => code.read('../../etc/passwd'), /fora do alcance/);
+  assert.throws(() => code.read('.env'), /fora do alcance/);
+  assert.throws(() => code.read('data/jarvis.db'), /fora do alcance/);
 });

@@ -442,6 +442,26 @@
     }
   }
 
+  // Deixas: gestos que ele marcou dentro da fala. Cada uma tem a posição no texto; o app acompanha
+  // o andamento da voz e dispara o feixe quando ela chega naquele ponto. Devolve uma função que,
+  // chamada no fim da fala, executa o que tiver sobrado.
+  function followCues(text, cues) {
+    const pending = (cues || []).slice().sort((a, b) => a.at - b.at);
+    if (!pending.length) return () => {};
+    const len = Math.max(1, text.length), started = performance.now();
+    const guess = Math.max(1.5, (text.length * .06) / (voiceRate || 1)); // duração estimada, para a voz do aparelho
+    const LEAD = .4;                                                     // o feixe leva um instante para chegar: sai um pouco antes
+    const timer = setInterval(() => {
+      if (!pending.length) return clearInterval(timer);
+      let dur = 0, cur = 0;
+      if (!player.paused && Number.isFinite(player.duration) && player.duration > 0) { dur = player.duration; cur = player.currentTime + LEAD * (voiceRate || 1); }
+      else if (!serverVoice || (synth && synth.speaking)) { dur = guess; cur = (performance.now() - started) / 1000 + LEAD; }
+      else return; // áudio ainda carregando: espera a voz começar
+      while (pending.length && cur >= dur * (pending[0].at / len)) runActions([pending.shift()]);
+    }, 40);
+    return () => { clearInterval(timer); if (pending.length) runActions(pending.splice(0)); };
+  }
+
   // ---------- Feixe ----------
   // point('next') ou point(elemento): o feixe cresce do núcleo até o alvo, segura um instante e some.
   // Vários pedidos seguidos entram em fila, para ele apontar uma coisa de cada vez.
@@ -1383,7 +1403,7 @@
     setState('thinking');
     hud('pensando');
     try {
-      const { reply, documents = [], trace, actions = [] } = await api('/api/chat', { text, channel, screen: screenState() });
+      const { reply, documents = [], trace, actions = [], cues = [] } = await api('/api/chat', { text, channel, screen: screenState() });
       if (trace) {
         sys.active = trace.model; renderSys();
         const ACT = {
@@ -1406,7 +1426,9 @@
       showReply(reply, documents);
       runActions(actions); // ele mexe na tela enquanto fala
       if (documents.length) setTimeout(() => point(document.querySelector('#log .doc')), 300);
+      const finishCues = followCues(reply, cues); // gestos sincronizados com a voz
       if (channel === 'voice') { setState('speaking'); await speak(reply); }
+      finishCues();
       lastReplyAt = Date.now();
     } catch (e) {
       if (e.message !== 'unauthorized') { hud('perdi o sinal'); showReply('Sem conexão com o servidor agora.'); }

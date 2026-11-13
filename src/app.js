@@ -211,6 +211,7 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
         reply,
         documents: created,
         actions: meta.actions ?? [], // comandos de tela que o app executa com o feixe
+        cues: meta.cues ?? [],       // gestos marcados dentro da fala, com a posição no texto
         model: meta.model,
         trace: { model: meta.model, ms: meta.ms, routeMs: meta.routeMs, steps: meta.steps, tools: meta.tools, tokensIn: meta.tokensIn, tokensOut: meta.tokensOut },
       });

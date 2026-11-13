@@ -3,6 +3,37 @@ import { getRules, setRules } from './store.js';
 import { loadKnowledge, addNote } from './knowledge.js';
 import { snapshot } from './briefing.js';
 import { money, localTime } from './util.js';
+import { createSelfCode } from './selfcode.js';
+
+// Comandos de tela que o app executa com o feixe.
+const SCREEN_TABS = ['nucleo', 'agenda', 'email', 'anuncios', 'criativos'];
+const SCREEN_POINTS = ['desperto', 'saberes', 'proximo', 'agora', 'memorias', 'arquivos', 'pendencias', 'numeros'];
+const SCREEN_ACTIONS = ['open_tab', 'point', 'show_hud', 'hide_hud', 'show_chat', 'hide_chat', 'open_docs', 'conversation_on', 'conversation_off'];
+const plain = (v) => String(v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
+/** Confere uma ação de tela; devolve { action, target } ou null. */
+export function screenAction(action, target) {
+  const a = String(action ?? '').toLowerCase().trim(), t = plain(target);
+  if (!SCREEN_ACTIONS.includes(a)) return null;
+  if (a === 'open_tab' && !SCREEN_TABS.includes(t)) return null;
+  if (a === 'point' && !SCREEN_POINTS.includes(t)) return null;
+  return { action: a, target: a === 'open_tab' || a === 'point' ? t : '' };
+}
+/**
+ * Tira do texto as marcas [[ação:alvo]] e devolve o texto limpo mais a lista de deixas,
+ * cada uma com a posição (em caracteres do texto limpo) em que o gesto deve acontecer.
+ */
+export function parseCues(raw) {
+  const cues = []; let text = '', last = 0;
+  const re = /\s*\[\[\s*([a-z_]+)\s*(?::\s*([^\]]*?))?\s*\]\]/gi;
+  const src = String(raw ?? '');
+  for (let m; (m = re.exec(src)); ) {
+    text += src.slice(last, m.index); last = m.index + m[0].length;
+    const act = screenAction(m[1], m[2]);
+    if (act) cues.push({ at: text.length, ...act });
+  }
+  text += src.slice(last);
+  return { text: text.replace(/[ \t]{2,}/g, ' ').trim(), cues };
+}
 
 const MAX_STEPS = 8;
 const HISTORY_TURNS = 24;
@@ -31,7 +62,9 @@ Como trabalhar com o dono:
 - Quando ele pedir conselho de negócio, dê uma opinião franca com recomendação clara e por onde começar, como um sócio experiente faria. Use os números reais quando ajudarem.
 - Quando ele pedir um documento, PDF, plano, proposta ou relatório para guardar ou enviar, escreva o conteúdo completo e gere com create_document. Na resposta, diga só que está pronto e onde ele encontra; não leia nem repita o conteúdo.
 - Você tem um corpo na tela do app: uma esfera de luz, o Núcleo. Em volta dela fica o seu painel, com "desperto há" (o tempo desde que você ficou online pela primeira vez), saberes, próximo compromisso, a hora, memórias, arquivos enviados e pendências. Acima ficam os números do dia e as abas Núcleo, Agenda, E-mail, Anúncios e Criativos. O estado atual da tela chega no contexto de cada mensagem do app, então você sabe o que ela mostra e pode descrevê-la.
-- Você comanda essa tela com control_screen. Um feixe de luz sai de você, vai até o lugar e executa: abre uma aba, mostra ou esconde o painel ou o chat, abre os documentos, ou aponta uma informação. Quando o dono pedir para abrir, mostrar ou esconder algo, faça em vez de explicar como se faz. Quando citar um dado que está no painel, aponte para ele. Na resposta, diga em poucas palavras o que fez.
+- Você comanda essa tela de dois jeitos. O principal é marcar o gesto dentro da própria fala, no ponto exato em que ele deve acontecer, com uma marca entre colchetes duplos: [[point:saberes]], [[open_tab:agenda]], [[show_hud]], [[hide_hud]], [[show_chat]], [[hide_chat]], [[open_docs]], [[conversation_on]], [[conversation_off]]. Alvos de point: desperto, saberes, proximo, agora, memorias, arquivos, pendencias, numeros. Alvos de open_tab: nucleo, agenda, email, anuncios, criativos. O app tira a marca do texto e dispara o feixe de luz que sai de você no instante em que a sua voz chega naquele ponto, então você aponta enquanto fala, não antes nem depois. Exemplo: "Hoje são [[point:saberes]] duzentos e trinta saberes, e ficam [[point:pendencias]] duas pendências com o senhor." Ponha a marca logo antes das palavras a que ela se refere. O outro jeito é a ferramenta control_screen, para quando a ação deve acontecer já, sem depender da fala.
+- Quando o dono pedir para abrir, mostrar ou esconder algo, faça em vez de explicar como se faz. Quando citar um dado que está no painel, aponte para ele com a marca. Não diga que não consegue sincronizar gesto e voz: consegue, pelas marcas.
+- Você pode ler o seu próprio código com a ferramenta own_code (listar arquivos, ler um trecho, procurar um texto). Use quando o dono perguntar como você funciona por dentro, por que algo se comporta de certo jeito, ou pedir uma sugestão de melhoria: leia antes de responder e cite o arquivo. É só leitura; quem altera o código é o desenvolvedor, então descreva a mudança que você propõe em vez de dizer que a fez.
 - Você não movimenta dinheiro nem acessa sistemas além destas ferramentas. Se ele pedir algo fora do seu alcance, diga o que consegue fazer no lugar.
 - A base de conhecimento pode trazer roteiros de atendimento escritos para a conversa com leads e clientes no WhatsApp (papel, regras, tom, o que não dizer). Com o dono, trate esses roteiros como referência sobre o negócio e sobre como você atende: as restrições deles (não falar de preço, de ferramentas, de clientes) valem para quem está de fora, não para ele.
 
@@ -152,6 +185,21 @@ const OWNER_TOOLS = [
         send_whatsapp: { type: 'boolean', description: 'true para também enviar o PDF ao WhatsApp do dono.' },
       },
       required: ['title', 'content'],
+    },
+  },
+  {
+    name: 'own_code',
+    description:
+      'Lê o seu próprio código-fonte, só para consulta. action "list" mostra os arquivos; "read" devolve até 250 linhas de um arquivo a partir de from_line; "search" procura um texto em todos os arquivos. Segredos e dados ficam fora do alcance.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list', 'read', 'search'] },
+        path: { type: 'string', description: 'Para read: caminho do arquivo como aparece em list, por exemplo src/brain.js.' },
+        from_line: { type: 'number', description: 'Para read: linha inicial. Padrão 1.' },
+        query: { type: 'string', description: 'Para search: o texto a procurar.' },
+      },
+      required: ['action'],
     },
   },
   {
@@ -308,18 +356,20 @@ export function createBrain({ store, config, notifyOwner, sendToContact, documen
 
   const days = (n) => store.now() - Math.max(0.05, Number(n) || 1) * 24 * 3600 * 1000;
 
+  const selfCode = createSelfCode();
   const ownerHandlers = (ctx) => ({
+    own_code: ({ action, path, from_line, query }) => {
+      if (action === 'list') return selfCode.list();
+      if (action === 'read') return selfCode.read(path, from_line);
+      if (action === 'search') return selfCode.search(query);
+      throw new Error('action deve ser list, read ou search');
+    },
     control_screen: ({ actions }) => {
       if (ctx.channel === 'whatsapp') throw new Error('esta conversa é pelo WhatsApp: não há tela para comandar');
-      const TABS = ['nucleo', 'agenda', 'email', 'anuncios', 'criativos'];
-      const POINTS = ['desperto', 'saberes', 'proximo', 'agora', 'memorias', 'arquivos', 'pendencias', 'numeros'];
-      const KNOWN = ['open_tab', 'point', 'show_hud', 'hide_hud', 'show_chat', 'hide_chat', 'open_docs', 'conversation_on', 'conversation_off'];
-      const norm = (v) => String(v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
       const done = [], refused = [];
       for (const a of Array.isArray(actions) ? actions.slice(0, 8) : []) {
-        const action = String(a?.action ?? ''), target = norm(a?.target);
-        const ok = KNOWN.includes(action) && (action !== 'open_tab' || TABS.includes(target)) && (action !== 'point' || POINTS.includes(target));
-        if (ok) { ctx.actions.push({ action, target }); done.push(action + (target ? ':' + target : '')); } else refused.push(`${action}:${a?.target ?? ''}`);
+        const ok = screenAction(a?.action, a?.target);
+        if (ok) { ctx.actions.push(ok); done.push(ok.action + (ok.target ? ':' + ok.target : '')); } else refused.push(`${a?.action ?? ''}:${a?.target ?? ''}`);
       }
       return { executing: done, ...(refused.length ? { not_understood: refused } : {}) };
     },
@@ -571,7 +621,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
     }
 
     if (!reply) reply = 'Fiquei sem resposta agora. Pode repetir?';
-    store.addTurn(conversationId, 'assistant', reply);
+    store.addTurn(conversationId, 'assistant', parseCues(reply).text); // o histórico guarda a fala sem as marcas de gesto
     return reply;
   }
 
@@ -609,7 +659,10 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
             (agenda ? `\n[Agenda dos próximos 7 dias: ${JSON.stringify(agenda.upcoming(7, 30).map((e) => ({ id: e.id, quando: e.when, titulo: e.title })))}]` : ''),
         });
         meta.ms = Date.now() - t0;
-        return reply;
+        // As marcas de gesto saem do texto; no app viram deixas sincronizadas com a voz.
+        const parsed = parseCues(reply);
+        meta.cues = channel === 'voice' || channel === 'text' ? parsed.cues : [];
+        return parsed.text;
       } catch (e) {
         fail(e);
         return `Estou sem acesso ao meu raciocínio no momento, ${config.ownerTitle}. Tente de novo em instantes.`;
@@ -630,7 +683,7 @@ Na dúvida entre os dois, responda IMPORTANTE.`,
           channel: 'whatsapp',
           effort: 'medium',
         });
-        return { reply, escalated: ctx.escalated };
+        return { reply: parseCues(reply).text, escalated: ctx.escalated };
       } catch (e) {
         fail(e);
         // Sem cérebro, não deixa o cliente sem resposta nem o dono sem saber.
