@@ -425,7 +425,7 @@
     const life = `${pad(Math.floor(up / 3600))}:${pad(Math.floor(up / 60) % 60)}:${pad(up % 60)}`;
     const gain = sys.gainUntil > Date.now();
     $('hud-sys').innerHTML =
-      `<span data-k="desperto">desperto há <i>${sys.bornAt ? life : '—'}</i></span><br><span class="kp${gain ? ' gain' : ''}"></span><span data-k="saberes">saberes <i class="${gain ? 'up' : ''}">${sys.saberes ?? '—'}</i></span><br><span data-k="next">próximo <i>${sys.next ? esc(sys.next) : '—'}</i></span>`;
+      `<span data-k="desperto">desperto há <i>${sys.bornAt ? life : '—'}</i></span><br><span class="kp${gain ? ' gain' : ''}"></span><span data-k="saberes">saberes <i class="${gain ? 'up' : ''}">${sys.saberes ?? '—'}</i></span><br><span data-k="next">próximo <i>${sys.next ? esc(sys.next) : '—'}</i></span><br><span data-k="local">localização <i>Limeira, São Paulo</i></span>`;
     $('hud-clock').innerHTML =
       `<span data-k="agora">agora <i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i></span><br><span data-k="memorias">memórias <i>${sys.memorias ?? '—'}</i></span><br><span data-k="files">arquivos <i>${sys.files ?? '—'}</i></span><br><span data-k="reminders">pendências <i>${sys.reminders ?? '—'}</i></span>`;
     // O painel é redesenhado a cada segundo; o destaque do feixe é reaplicado enquanto durar.
