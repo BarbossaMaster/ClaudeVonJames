@@ -1232,7 +1232,7 @@
         try { player.pause(); player.removeAttribute('src'); player.load(); } catch {}
         dbg('fala: fim (' + why + ')');
         hud(why === 'interrompida' ? 'fala interrompida' : 'fala concluída');
-        resolve();
+        resolve(why);
       };
       const guard = (ms) => { clearTimeout(timer); timer = setTimeout(() => finish('tempo'), ms); };
       endSpeech = () => finish('interrompida');
