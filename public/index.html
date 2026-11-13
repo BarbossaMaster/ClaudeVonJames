@@ -1894,7 +1894,13 @@
       const finishCues = followCues(reply, cues);
       setState('speaking');
       try { localStorage.setItem('jv_cut', JSON.stringify({ text: reply, at: Date.now() })); } catch {}
-      await speak(reply);
+      const how = await speak(reply, true);
+      if (how === 'bloqueada') {
+        // Navegador segurou o som: a voz verdadeira toca no primeiro toque na página.
+        const again = () => { document.removeEventListener('pointerdown', again); document.removeEventListener('keydown', again); speak(reply); };
+        document.addEventListener('pointerdown', again, { once: true });
+        document.addEventListener('keydown', again, { once: true });
+      }
       try { localStorage.removeItem('jv_cut'); } catch {}
       finishCues();
       lastReplyAt = Date.now();
