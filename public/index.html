@@ -1880,7 +1880,7 @@
       if (pageSig === null) { pageSig = sig; return; }
       if (sig === pageSig) return;
       const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
-      if (handsFree || typing) return;
+      if (handsFree || typing || state === 'speaking' || state === 'thinking') return;
       location.reload();
     } catch {}
   }
