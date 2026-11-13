@@ -57,6 +57,34 @@ export function createSpeech(cfg, { fetchImpl = fetch } = {}) {
      * Gera a fala. format 'mp3' para o app web; 'voice' pede OGG/Opus (nota de voz do WhatsApp)
      * quando o provedor oferece. Devolve { buffer, mime }.
      */
+    /**
+     * Fala com o tempo de cada letra (só ElevenLabs): devolve o áudio e, para cada caractere do texto,
+     * o instante em que ele começa e termina. É o que permite gesto e voz baterem na palavra.
+     * Devolve null quando o provedor não oferece isso.
+     */
+    async speakTimed(text) {
+      if (provider !== 'elevenlabs') return null;
+      const input = String(text).slice(0, 4000);
+      const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(cfg.elevenVoice)}/with-timestamps?output_format=mp3_44100_128`;
+      const res = await fetchImpl(url, {
+        method: 'POST',
+        headers: { 'xi-api-key': cfg.elevenKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: input, model_id: cfg.elevenModel }),
+      });
+      if (!res.ok) throw new Error(`voz com tempos (ElevenLabs) ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      const j = await res.json();
+      const a = j.alignment ?? j.normalized_alignment;
+      if (!j.audio_base64 || !a?.character_start_times_seconds) throw new Error('resposta sem alinhamento');
+      const ms = (v) => Math.round(Number(v) * 1000);
+      return {
+        audio: j.audio_base64,
+        mime: 'audio/mpeg',
+        chars: a.characters.join(''),
+        starts: a.character_start_times_seconds.map(ms),
+        ends: a.character_end_times_seconds.map(ms),
+      };
+    },
+
     async speak(text, { format = 'mp3' } = {}) {
       const input = String(text).slice(0, 4000);
       if (provider === 'elevenlabs') {

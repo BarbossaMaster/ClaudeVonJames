@@ -320,6 +320,15 @@ export function createApp({ store, config, whatsapp, speech, brain, jarvis, docu
       const text = String(req.body?.text ?? '').trim();
       if (!text) return res.status(400).json({ error: 'text é obrigatório' });
       if (!speech?.canSpeak) return res.status(503).json({ error: 'voz não configurada' });
+      // Com timed=true, tenta a fala com o tempo de cada letra (para sincronizar gestos); se não der, manda só o áudio.
+      if (req.body?.timed && speech.speakTimed) {
+        try {
+          const timed = await speech.speakTimed(text.slice(0, 2000));
+          if (timed) return res.set('Cache-Control', 'no-store').json(timed);
+        } catch (e) {
+          log('[jarvis] fala com tempos indisponível, usando a fala comum:', e.message);
+        }
+      }
       const audio = await speech.speak(text.slice(0, 2000), { format: 'mp3' });
       res.set({ 'Content-Type': audio.mime, 'Cache-Control': 'no-store' }).send(audio.buffer);
     }),

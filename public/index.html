@@ -407,7 +407,7 @@
     $('hud-clock').innerHTML =
       `<span data-k="agora">agora <i>${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</i></span><br><span data-k="memorias">memórias <i>${sys.memorias ?? '—'}</i></span><br><span data-k="files">arquivos <i>${sys.files ?? '—'}</i></span><br><span data-k="reminders">pendências <i>${sys.reminders ?? '—'}</i></span>`;
     // O painel é redesenhado a cada segundo; o destaque do feixe é reaplicado enquanto durar.
-    if (sys.litUntil > Date.now()) { const el = document.querySelector(`[data-k="${sys.lit}"]`); if (el) el.classList.add('lit'); }
+    for (const [k, until] of litKeys) { if (until < performance.now()) { litKeys.delete(k); continue; } const el = document.querySelector(`[data-k="${k}"]`); if (el) el.classList.add('lit'); }
   }
   // Quando saberes ou memórias aumentam, o pulso dispara e o número sobe contando.
   function setKnowledge(saberes, memorias) {
@@ -430,17 +430,17 @@
   const AIMS = { desperto: 'desperto', saberes: 'saberes', proximo: 'next', agora: 'agora', memorias: 'memorias', arquivos: 'files', pendencias: 'reminders' };
   const VIEWS = { nucleo: 'nucleo', agenda: 'agenda', email: 'email', anuncios: 'ads', criativos: 'criativos' };
   // Executa os comandos que vieram do cérebro, um de cada vez: o feixe vai até o lugar e a ação acontece quando ele chega.
-  function runActions(list) {
-    for (const a of list || []) {
-      const t = a.target;
-      if (a.action === 'point') { if (t === 'numeros') point(document.querySelector('.stats'), () => {}); else if (AIMS[t]) point(AIMS[t], () => {}); }
-      else if (a.action === 'open_tab' && VIEWS[t]) { const v = VIEWS[t]; point(document.querySelector(`nav.tabs button[data-view="${v}"]`), () => { hud(`abrindo · <b>${esc(t)}</b>`); showView(v); }); }
-      else if (a.action === 'show_hud' || a.action === 'hide_hud') point($('hudbtn'), () => { setHud(a.action === 'show_hud'); hud(hudOn ? 'painel ativado' : 'painel minimizado'); });
-      else if (a.action === 'show_chat' || a.action === 'hide_chat') point($('chatbtn'), () => setChat(a.action === 'show_chat'));
-      else if (a.action === 'open_docs') point($('docsbtn'), () => $('docsbtn').click());
-      else if (a.action === 'conversation_on' || a.action === 'conversation_off') point($('handsfree'), () => { if (handsFree !== (a.action === 'conversation_on')) $('handsfree').click(); });
-    }
+  function runActionVia(a, go) {
+    const t = a.target;
+    if (a.action === 'point') { if (t === 'numeros') go(document.querySelector('.stats'), () => {}); else if (AIMS[t]) go(AIMS[t], () => {}); }
+    else if (a.action === 'open_tab' && VIEWS[t]) { const v = VIEWS[t]; go(document.querySelector(`nav.tabs button[data-view="${v}"]`), () => { hud(`abrindo · <b>${esc(t)}</b>`); showView(v); }); }
+    else if (a.action === 'show_hud' || a.action === 'hide_hud') go($('hudbtn'), () => { setHud(a.action === 'show_hud'); hud(hudOn ? 'painel ativado' : 'painel minimizado'); });
+    else if (a.action === 'show_chat' || a.action === 'hide_chat') go($('chatbtn'), () => setChat(a.action === 'show_chat'));
+    else if (a.action === 'open_docs') go($('docsbtn'), () => $('docsbtn').click());
+    else if (a.action === 'conversation_on' || a.action === 'conversation_off') go($('handsfree'), () => { if (handsFree !== (a.action === 'conversation_on')) $('handsfree').click(); });
   }
+  // Comandos sem hora marcada (vieram da ferramenta): um depois do outro.
+  function runActions(list) { for (const a of list || []) runActionVia(a, point); }
 
   // Deixas: gestos que ele marcou dentro da fala. Cada uma tem a posição no texto; o app acompanha
   // o andamento da voz e dispara o feixe quando ela chega naquele ponto. Devolve uma função que,
@@ -448,117 +448,159 @@
   function followCues(text, cues) {
     const pending = (cues || []).slice().sort((a, b) => a.at - b.at);
     if (!pending.length) return () => {};
-    const len = Math.max(1, text.length), started = performance.now();
-    const guess = Math.max(1.5, (text.length * .06) / (voiceRate || 1)); // duração estimada, para a voz do aparelho
-    const LEAD = .4;                                                     // o feixe leva um instante para chegar: sai um pouco antes
+    const len = Math.max(1, text.length), started = performance.now(), rate = voiceRate || 1;
+    const guess = Math.max(1.5, (text.length * .06) / rate); // duração estimada, para quando não há tempos
+    // Cada deixa cobre um trecho: da marca até a próxima pontuação (ou até a deixa seguinte).
+    for (let i = 0; i < pending.length; i++) {
+      const c = pending[i], rest = text.slice(c.at + 1), stop = rest.search(/[,.;:!?\n]/);
+      let end = stop === -1 ? len : c.at + 1 + stop;
+      if (pending[i + 1]) end = Math.min(end, pending[i + 1].at);
+      c.end = Math.max(c.at + 1, end);
+    }
     const timer = setInterval(() => {
       if (!pending.length) return clearInterval(timer);
-      let dur = 0, cur = 0;
-      if (!player.paused && Number.isFinite(player.duration) && player.duration > 0) { dur = player.duration; cur = player.currentTime + LEAD * (voiceRate || 1); }
-      else if (!serverVoice || (synth && synth.speaking)) { dur = guess; cur = (performance.now() - started) / 1000 + LEAD; }
-      else return; // áudio ainda carregando: espera a voz começar
-      while (pending.length && cur >= dur * (pending[0].at / len)) runActions([pending.shift()]);
-    }, 40);
-    return () => { clearInterval(timer); if (pending.length) runActions(pending.splice(0)); };
+      const c = pending[0], playing = !player.paused && player.currentTime > 0;
+      let startIn, holdFor; // quanto falta (ms reais) para a palavra começar, e quanto ela dura
+      if (playing && speechAlign && speechAlign.starts.length) {
+        // tempo exato de cada letra, vindo do serviço de voz
+        const n = speechAlign.starts.length, i0 = Math.min(n - 1, c.at), i1 = Math.min(n - 1, c.end - 1);
+        // pula espaços no começo do trecho: a palavra começa na primeira letra
+        let i = i0; while (i < i1 && /\s/.test(text[i] || '')) i++;
+        startIn = (speechAlign.starts[i] - player.currentTime * 1000) / rate;
+        holdFor = Math.max(260, (speechAlign.ends[i1] - speechAlign.starts[i]) / rate);
+      } else if (playing && Number.isFinite(player.duration) && player.duration > 0) {
+        startIn = ((player.duration * c.at) / len - player.currentTime) * 1000 / rate;   // proporção do texto
+        holdFor = Math.max(400, (player.duration * (c.end - c.at)) / len * 1000 / rate);
+      } else if (!serverVoice || (synth && synth.speaking)) {
+        startIn = guess * 1000 * (c.at / len) - (performance.now() - started);           // voz do aparelho: estimativa
+        holdFor = Math.max(500, guess * 1000 * ((c.end - c.at) / len));
+      } else return; // áudio ainda carregando
+      if (startIn > SPAN_GROW + 60) return; // ainda cedo: o feixe só sai a tempo de chegar junto com a palavra
+      pending.shift();
+      runCue(c, performance.now() + Math.max(0, startIn), holdFor);
+    }, 25);
+    return () => { clearInterval(timer); for (const c of pending.splice(0)) runCue(c, performance.now() + SPAN_GROW, 700); };
+  }
+  // Uma deixa vira um feixe com hora marcada: chega no começo da palavra e fica até o fim dela.
+  function runCue(c, arriveAt, hold) {
+    const t = c.target, span = (target, fn) => pointSpan(target, fn, arriveAt, hold);
+    if (c.action === 'point') { if (t === 'numeros') span(document.querySelector('.stats'), () => {}); else if (AIMS[t]) span(AIMS[t], () => {}); }
+    else runActionVia(c, span);
   }
 
   // ---------- Feixe ----------
   // point('next') ou point(elemento): o feixe cresce do núcleo até o alvo, segura um instante e some.
   // Vários pedidos seguidos entram em fila, para ele apontar uma coisa de cada vez.
-  const beamQueue = []; let beamBusy = false;
-  function point(target, onArrive) {
-    // Sem ação a executar, o feixe é só um gesto e depende do painel ligado. Com ação, ele sempre acontece.
-    if (!onArrive && (!hudOn || view !== 'nucleo' || document.hidden)) return;
-    beamQueue.push({ target, onArrive }); if (beamQueue.length > 8) beamQueue.shift();
-    if (!beamBusy) nextBeam();
-  }
-  // O feixe é um filamento vivo, feito da mesma luz da esfera: nasce na superfície dela, cresce em curva
-  // até a informação, ondula enquanto aponta, leva faíscas da raiz à ponta e depois se recolhe para dentro.
-  // Cada um sai com curvatura, ritmo e tremor próprios, para nunca repetir o mesmo gesto.
+  // Cada feixe tem a sua linha do tempo: cresce até arriveAt, segura por hold e se recolhe.
+  // Podem existir vários ao mesmo tempo: quando um novo vai chegar, o anterior já começa a se recolher,
+  // e os dois se cruzam no ar em vez de um esperar o outro.
+  const SPAN_GROW = 380;            // quanto tempo o feixe leva para alcançar o alvo, quando tem hora marcada
+  const beams = []; let fxOn = false, freeAt = 0;
   const fx = $('beamfx'), fg = fx.getContext('2d');
   function fitFx() { const d = Math.min(devicePixelRatio || 1, 2); fx.width = Math.round(innerWidth * d); fx.height = Math.round(innerHeight * d); fg.setTransform(d, 0, 0, d, 0, 0); }
   fitFx(); addEventListener('resize', fitFx);
-  function nextBeam() {
-    const item = beamQueue.shift();
-    if (!item) { beamBusy = false; fg.clearRect(0, 0, innerWidth, innerHeight); return; }
-    const target = item.target;
-    let arrived = false;
-    const arrive = () => { if (arrived) return; arrived = true; if (item.onArrive) { try { item.onArrive(); } catch (x) { console.error('ação de tela falhou', x); dbg('ação de tela falhou: ' + (x && x.message)); } } };
-    // Fora do Núcleo a esfera não está na tela: executa a ação direto, sem gesto.
-    if (view !== 'nucleo' || document.hidden) { arrive(); return nextBeam(); }
-    const find = () => (typeof target === 'string' ? document.querySelector(`[data-k="${target}"]`) : target);
-    let el = find();
-    if (!el || !el.getClientRects().length) { arrive(); return nextBeam(); }
-    beamBusy = true;
-    if (typeof target === 'string') { sys.lit = target; sys.litUntil = Date.now() + 2300; }
-    const light = () => { const e = find(); if (e) e.classList.add('lit'); return e; };
-    if (still) { light(); arrive(); return setTimeout(() => { const e = find(); if (e && typeof target !== 'string') e.classList.remove('lit'); beamBusy = false; nextBeam(); }, 1700); }
+  const litKeys = new Map(); // campos do painel acesos agora -> até quando
 
+  function makeBeam(target, onArrive, arriveAt, grow, hold, back) {
     const rnd = Math.random, side = rnd() < .5 ? -1 : 1;
-    const bend = (.10 + rnd() * .16) * side, bend2 = (.04 + rnd() * .12) * -side;   // curvatura dos dois pontos de controle
-    const f1 = 1.1 + rnd() * 1.3, f2 = 1.7 + rnd() * 1.6, ph1 = rnd() * 6.28, ph2 = rnd() * 6.28; // ritmos do ondular
-    const GROW = 520 + rnd() * 260, HOLD = 950 + rnd() * 350, BACK = 420 + rnd() * 200;
-    const sparks = Array.from({ length: 5 + Math.floor(rnd() * 4) }, () => ({ at: rnd(), speed: .5 + rnd() * .9, size: .8 + rnd() * 1.1 }));
-    const start = performance.now(); let lit = false;
+    return {
+      target, onArrive, arriveAt, grow, hold, back, arrived: false,
+      bend: (.10 + rnd() * .16) * side, bend2: (.04 + rnd() * .12) * -side,
+      f1: 1.1 + rnd() * 1.3, f2: 1.7 + rnd() * 1.6, ph1: rnd() * 6.28, ph2: rnd() * 6.28,
+      sparks: Array.from({ length: 5 + Math.floor(rnd() * 4) }, () => ({ at: rnd(), speed: .5 + rnd() * .9, size: .8 + rnd() * 1.1 })),
+    };
+  }
+  const findEl = (b) => (typeof b.target === 'string' ? document.querySelector(`[data-k="${b.target}"]`) : b.target);
+  function arrive(b) {
+    if (b.arrived) return; b.arrived = true;
+    const el = findEl(b);
+    if (typeof b.target === 'string') litKeys.set(b.target, performance.now() + Math.max(300, b.hold) + 200);
+    if (el) el.classList.add('lit');
+    if (b.onArrive) { try { b.onArrive(); } catch (x) { console.error('ação de tela falhou', x); dbg('ação de tela falhou: ' + (x && x.message)); } }
+  }
+  function release(b) { if (b.released) return; b.released = true; const el = findEl(b); if (typeof b.target === 'string') litKeys.delete(b.target); if (el) el.classList.remove('lit'); }
+  function addBeam(b) {
+    // Sem a esfera na tela (outra aba) ou sem animação: a ação acontece na hora marcada, sem gesto.
+    if (still || view !== 'nucleo' || document.hidden) {
+      setTimeout(() => { arrive(b); setTimeout(() => release(b), Math.max(300, b.hold)); }, Math.max(0, b.arriveAt - performance.now()));
+      return;
+    }
+    beams.push(b);
+    if (!fxOn) { fxOn = true; requestAnimationFrame(drawBeams); }
+  }
+  // Gesto sem hora marcada: entra depois do último que estiver agendado.
+  function point(target, onArrive) {
+    if (!onArrive && (!hudOn || view !== 'nucleo' || document.hidden)) return;
+    const now = performance.now(), grow = 520 + Math.random() * 260, hold = 950 + Math.random() * 350, back = 420 + Math.random() * 200;
+    const arriveAt = Math.max(now, freeAt) + grow;
+    freeAt = arriveAt + hold + back * .5;
+    addBeam(makeBeam(target, onArrive, arriveAt, grow, hold, back));
+  }
+  // Gesto com hora marcada (sincronizado com a voz): chega em arriveAt e fica por hold.
+  function pointSpan(target, onArrive, arriveAt, hold) {
+    if (!target) return;
+    const now = performance.now(), grow = Math.min(SPAN_GROW, Math.max(140, arriveAt - now));
+    // o feixe anterior larga o alvo dele um pouco antes de este chegar
+    for (const o of beams) if (o.arriveAt + o.hold > arriveAt - 90) o.hold = Math.max(0, arriveAt - 90 - o.arriveAt);
+    freeAt = Math.max(freeAt, arriveAt + hold);
+    addBeam(makeBeam(target, onArrive, Math.max(now + grow, arriveAt), grow, hold, 300 + Math.random() * 120));
+  }
 
-    (function frame(now) {
-      const e = now - start, tsec = e / 1000;
-      // A aba mudou no meio do gesto (ele mesmo abriu outra tela): a esfera saiu de cena, o feixe some com ela.
-      if (view !== 'nucleo') { fg.clearRect(0, 0, innerWidth, innerHeight); arrive(); beamBusy = false; return nextBeam(); }
-      el = find() || el;
-      const o = viz.getBoundingClientRect(), t = el.getBoundingClientRect();
-      const cx = o.left + o.width / 2, cy = o.top + o.height / 2;
+  function drawBeams(now) {
+    fg.clearRect(0, 0, innerWidth, innerHeight);
+    const o = viz.getBoundingClientRect(), cx = o.left + o.width / 2, cy = o.top + o.height / 2, gone = view !== 'nucleo' || !o.width;
+    for (let n = beams.length - 1; n >= 0; n--) {
+      const b = beams[n], e = now - (b.arriveAt - b.grow), tsec = now / 1000;
+      const el = findEl(b);
+      // A esfera saiu de cena (ele mesmo abriu outra tela) ou o alvo sumiu: cumpre a ação e encerra.
+      if (gone || !el || !el.getClientRects().length) { arrive(b); release(b); beams.splice(n, 1); continue; }
+      if (e < 0) continue; // ainda não é a hora deste
+      let k;
+      if (e < b.grow) { const q = e / b.grow; k = 1 - Math.pow(1 - q, 3); }
+      else if (e < b.grow + b.hold) k = 1;
+      else { const q = Math.min(1, (e - b.grow - b.hold) / b.back); k = 1 - q * q; }
+      if (!b.arrived && e >= b.grow - 16) arrive(b);                 // a ponta chegou: acende o alvo e executa a ação
+      if (e >= b.grow + b.hold) release(b);
+      if (e >= b.grow + b.hold + b.back) { beams.splice(n, 1); continue; }
+      if (k <= .01) continue;
+
+      const t = el.getBoundingClientRect();
       const tx = cx < t.left ? t.left - 7 : cx > t.right ? t.right + 7 : Math.max(t.left + 8, Math.min(cx, t.right - 8));
       const ty = cy < t.top ? (cx >= t.left && cx <= t.right ? t.top - 4 : (t.top + t.bottom) / 2) : cy > t.bottom ? (cx >= t.left && cx <= t.right ? t.bottom + 4 : (t.top + t.bottom) / 2) : (t.top + t.bottom) / 2;
       const d = Math.hypot(tx - cx, ty - cy) || 1, ux = (tx - cx) / d, uy = (ty - cy) / d, nx = -uy, ny = ux;
       const r0 = o.width * .225, sx = cx + ux * r0, sy = cy + uy * r0, len = Math.hypot(tx - sx, ty - sy);
-      // pontos de controle que respiram: a curva nunca fica parada
-      const w1 = len * (bend + .035 * Math.sin(tsec * f1 * 2 + ph1)), w2 = len * (bend2 + .03 * Math.sin(tsec * f2 * 2 + ph2));
+      const w1 = len * (b.bend + .035 * Math.sin(tsec * b.f1 * 2 + b.ph1)), w2 = len * (b.bend2 + .03 * Math.sin(tsec * b.f2 * 2 + b.ph2));
       const c1x = sx + (tx - sx) * .33 + nx * w1, c1y = sy + (ty - sy) * .33 + ny * w1;
       const c2x = sx + (tx - sx) * .7 + nx * w2, c2y = sy + (ty - sy) * .7 + ny * w2;
       const at = (q) => { const m = 1 - q; return [m * m * m * sx + 3 * m * m * q * c1x + 3 * m * q * q * c2x + q * q * q * tx, m * m * m * sy + 3 * m * m * q * c1y + 3 * m * q * q * c2y + q * q * q * ty]; };
-      // quanto do filamento existe: cresce com um leve excesso, segura, e se recolhe para a esfera
-      let k;
-      if (e < GROW) { const q = e / GROW; k = 1 - Math.pow(1 - q, 3); }
-      else if (e < GROW + HOLD) k = 1;
-      else { const q = Math.min(1, (e - GROW - HOLD) / BACK); k = 1 - q * q; }
-      if (!lit && k > .96) { lit = true; light(); arrive(); } // a ponta chegou: acende o alvo e executa a ação
 
-      fg.clearRect(0, 0, innerWidth, innerHeight);
-      if (k > .01) {
-        fg.globalCompositeOperation = 'lighter'; fg.lineCap = 'round'; fg.lineJoin = 'round';
-        const N = 46, pts = [];
-        for (let i = 0; i <= N; i++) pts.push(at((i / N) * k));
-        const tip = pts[N];
-        const grad = fg.createLinearGradient(sx, sy, tip[0], tip[1]);
-        grad.addColorStop(0, rgba(GOLD, .0)); grad.addColorStop(.12, rgba(GOLD, 1)); grad.addColorStop(.75, rgba(WHITE, 1)); grad.addColorStop(1, rgba(NEON, 1));
-        const flick = .82 + .18 * Math.sin(tsec * 23 + ph1) * Math.sin(tsec * 7.1 + ph2); // tremor de luz
-        // três traços sobrepostos: névoa larga, corpo e fio central
-        for (const [w, a] of [[9, .07], [3.6, .22], [1.15, .95]]) {
-          fg.beginPath(); fg.moveTo(pts[0][0], pts[0][1]);
-          for (let i = 1; i <= N; i++) fg.lineTo(pts[i][0], pts[i][1]);
-          fg.strokeStyle = grad; fg.globalAlpha = a * flick; fg.lineWidth = w; fg.stroke();
-        }
-        // faíscas que correm da raiz para a ponta
-        for (const sp of sparks) {
-          const q = ((sp.at + tsec * sp.speed) % 1) * k, [px, py] = at(q), tw = .5 + .5 * Math.sin(tsec * 9 + sp.at * 40);
-          fg.globalAlpha = (.35 + .65 * tw) * Math.min(1, q * 8);
-          fg.fillStyle = rgba(NEON, 1); fg.shadowColor = rgba(NEON, .9); fg.shadowBlur = 6;
-          fg.beginPath(); fg.arc(px, py, sp.size * (.7 + .5 * tw), 0, 6.2832); fg.fill();
-        }
-        // ponta: um ponto de luz que pulsa
-        const pulse = 1 + .35 * Math.sin(tsec * 6 + ph1);
-        const glow = fg.createRadialGradient(tip[0], tip[1], 0, tip[0], tip[1], 11 * pulse);
-        glow.addColorStop(0, rgba(NEON, .9)); glow.addColorStop(.3, rgba(WHITE, .35)); glow.addColorStop(1, rgba(GOLD, 0));
-        fg.shadowBlur = 0; fg.globalAlpha = Math.min(1, k * 1.4); fg.fillStyle = glow;
-        fg.beginPath(); fg.arc(tip[0], tip[1], 11 * pulse, 0, 6.2832); fg.fill();
-        fg.globalAlpha = 1; fg.globalCompositeOperation = 'source-over';
+      fg.globalCompositeOperation = 'lighter'; fg.lineCap = 'round'; fg.lineJoin = 'round';
+      const N = 46, pts = [];
+      for (let i = 0; i <= N; i++) pts.push(at((i / N) * k));
+      const tip = pts[N];
+      const grad = fg.createLinearGradient(sx, sy, tip[0], tip[1]);
+      grad.addColorStop(0, rgba(GOLD, 0)); grad.addColorStop(.12, rgba(GOLD, 1)); grad.addColorStop(.75, rgba(WHITE, 1)); grad.addColorStop(1, rgba(NEON, 1));
+      const flick = .82 + .18 * Math.sin(tsec * 23 + b.ph1) * Math.sin(tsec * 7.1 + b.ph2);
+      for (const [w, a] of [[9, .07], [3.6, .22], [1.15, .95]]) {
+        fg.beginPath(); fg.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i <= N; i++) fg.lineTo(pts[i][0], pts[i][1]);
+        fg.strokeStyle = grad; fg.globalAlpha = a * flick; fg.lineWidth = w; fg.stroke();
       }
-      if (e < GROW + HOLD + BACK) return requestAnimationFrame(frame);
-      fg.clearRect(0, 0, innerWidth, innerHeight);
-      if (typeof target !== 'string') { const x = find(); if (x) x.classList.remove('lit'); }
-      beamBusy = false; nextBeam();
-    })(start);
+      for (const sp of b.sparks) {
+        const q = ((sp.at + tsec * sp.speed) % 1) * k, [px, py] = at(q), tw = .5 + .5 * Math.sin(tsec * 9 + sp.at * 40);
+        fg.globalAlpha = (.35 + .65 * tw) * Math.min(1, q * 8);
+        fg.fillStyle = rgba(NEON, 1); fg.shadowColor = rgba(NEON, .9); fg.shadowBlur = 6;
+        fg.beginPath(); fg.arc(px, py, sp.size * (.7 + .5 * tw), 0, 6.2832); fg.fill();
+      }
+      const pulse = 1 + .35 * Math.sin(tsec * 6 + b.ph1);
+      const glow = fg.createRadialGradient(tip[0], tip[1], 0, tip[0], tip[1], 11 * pulse);
+      glow.addColorStop(0, rgba(NEON, .9)); glow.addColorStop(.3, rgba(WHITE, .35)); glow.addColorStop(1, rgba(GOLD, 0));
+      fg.shadowBlur = 0; fg.globalAlpha = Math.min(1, k * 1.4); fg.fillStyle = glow;
+      fg.beginPath(); fg.arc(tip[0], tip[1], 11 * pulse, 0, 6.2832); fg.fill();
+      fg.globalAlpha = 1; fg.globalCompositeOperation = 'source-over';
+    }
+    if (beams.length) requestAnimationFrame(drawBeams);
+    else { fxOn = false; fg.clearRect(0, 0, innerWidth, innerHeight); }
   }
 
   let chatOn = mem.get('jarvis_chat') === 'on'; // escondido por padrão
@@ -1049,6 +1091,7 @@
   // Volume da fala ao longo do tempo, calculado do próprio áudio antes de tocar. O áudio continua
   // tocando pelo player normal; isto só lê os dados para a esfera se mexer junto com a voz.
   let speechEnv = null, decodeCtx = null;
+  let speechAlign = null; // instante (ms) em que cada letra da fala atual começa e termina
   function speechLevel() {
     if (!speechEnv || player.paused || !(player.currentTime > 0)) return null;
     return speechEnv.data[Math.floor(player.currentTime / speechEnv.step)] ?? 0;
@@ -1083,7 +1126,7 @@
       let done = false, timer = null;
       const finish = (why = 'evento') => {
         if (done) return; done = true;
-        clearTimeout(timer); endSpeech = null; speechEnv = null;
+        clearTimeout(timer); endSpeech = null; speechEnv = null; speechAlign = null;
         player.onended = player.onerror = player.onloadedmetadata = null;
         // Devolve o áudio do aparelho: no iPhone, um player ainda "ativo" deixa o microfone surdo na escuta seguinte.
         try { player.pause(); player.removeAttribute('src'); player.load(); } catch {}
@@ -1112,9 +1155,16 @@
       fetch('/api/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, timed: true }),
       })
-        .then((res) => (res.ok ? res.blob() : Promise.reject(new Error('HTTP ' + res.status))))
+        .then(async (res) => {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          // Com ElevenLabs vem um JSON com o áudio e o instante de cada letra; senão, só o áudio.
+          if (!/json/.test(res.headers.get('content-type') || '')) { speechAlign = null; return res.blob(); }
+          const j = await res.json();
+          speechAlign = { starts: j.starts, ends: j.ends };
+          return new Blob([Uint8Array.from(atob(j.audio), (c) => c.charCodeAt(0))], { type: j.mime || 'audio/mpeg' });
+        })
         .then((blob) => {
           if (done) return;
           if (lastUrl) URL.revokeObjectURL(lastUrl);

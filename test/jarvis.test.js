@@ -721,3 +721,30 @@ test('acesso ao próprio código: lista, lê e procura; segredos e dados ficam d
   assert.throws(() => code.read('.env'), /fora do alcance/);
   assert.throws(() => code.read('data/jarvis.db'), /fora do alcance/);
 });
+
+test('fala com tempos: ElevenLabs devolve áudio e o instante de cada letra; se falhar, cai na fala comum', async () => {
+  const { createSpeech } = await import('../src/speech.js');
+  const calls = [];
+  const s = createSpeech({ elevenKey: 'e', elevenVoice: 'v1', elevenModel: 'm' }, { fetchImpl: async (url, init) => {
+    calls.push(url);
+    return { ok: true, status: 200, json: async () => ({ audio_base64: 'QUJD', alignment: { characters: ['O', 'i'], character_start_times_seconds: [0, 0.12], character_end_times_seconds: [0.12, 0.3] } }) };
+  } });
+  const t = await s.speakTimed('Oi');
+  assert.equal(calls[0], 'https://api.elevenlabs.io/v1/text-to-speech/v1/with-timestamps?output_format=mp3_44100_128');
+  assert.deepEqual({ chars: t.chars, starts: t.starts, ends: t.ends, audio: t.audio }, { chars: 'Oi', starts: [0, 120], ends: [120, 300], audio: 'QUJD' });
+  assert.equal(await createSpeech({ openaiKey: 'o', ttsModel: 'tts-1', ttsVoice: 'onyx' }).speakTimed('Oi'), null);
+
+  // rota: com tempos devolve JSON; se a fala com tempos falhar, devolve o áudio comum
+  const h = { Authorization: 'Bearer segredo', 'Content-Type': 'application/json' };
+  const body = JSON.stringify({ text: 'Oi', timed: true });
+  const ok = await serve(setup({ speech: { enabled: false, canSpeak: true, speakTimed: async () => ({ audio: 'QUJD', mime: 'audio/mpeg', chars: 'Oi', starts: [0, 120], ends: [120, 300] }), speak: async () => ({ buffer: Buffer.from('mp3'), mime: 'audio/mpeg' }) } }).app);
+  const bad = await serve(setup({ speech: { enabled: false, canSpeak: true, speakTimed: async () => { throw new Error('402'); }, speak: async () => ({ buffer: Buffer.from('mp3'), mime: 'audio/mpeg' }) } }).app);
+  try {
+    const a = await fetch(`${ok.base}/api/speak`, { method: 'POST', headers: h, body });
+    assert.match(a.headers.get('content-type'), /application\/json/);
+    assert.deepEqual((await a.json()).starts, [0, 120]);
+    const b = await fetch(`${bad.base}/api/speak`, { method: 'POST', headers: h, body });
+    assert.equal(b.headers.get('content-type'), 'audio/mpeg');
+    assert.equal(await b.text(), 'mp3');
+  } finally { await ok.close(); await bad.close(); }
+});
