@@ -133,6 +133,23 @@
   .btn { justify-self: start; margin-top: 6px; padding: 9px 16px; border: 1px solid color-mix(in srgb, var(--green) 55%, transparent); border-radius: 99px; color: var(--green); font-size: 13px; }
   .linkish { color: var(--muted); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 
+  /* Símbolos que ele materializa ao lado do núcleo: traço de luz âmbar com realces em amarelo, sem preenchimento. */
+  .glyph { position: fixed; width: 76px; height: 76px; margin: -38px 0 0 -38px; z-index: 3; pointer-events: none; opacity: 0; transform: scale(.55); transition: opacity .45s ease, transform .6s cubic-bezier(.2, 1.4, .4, 1); filter: drop-shadow(0 0 6px rgba(238, 122, 26, .9)) drop-shadow(0 0 16px rgba(238, 98, 12, .45)); }
+  .glyph.on { opacity: 1; transform: scale(1); }
+  .glyph svg { width: 100%; height: 100%; fill: none; stroke: #F08A2A; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+  .glyph .hot { stroke: #FFD54A; }
+  .glyph .spin { transform-origin: 32px 32px; animation: gspin 14s linear infinite; }
+  .glyph .spin2 { transform-origin: 22px 24px; animation: gspin 14s linear infinite; }
+  .glyph .drop { stroke-dasharray: 5 9; animation: gfall .9s linear infinite; }
+  .glyph .flash { animation: gflash 1.6s ease-in-out infinite; }
+  .glyph .drift { animation: gdrift 2.6s ease-in-out infinite; }
+  .glyph .tw { animation: gflash 2.2s ease-in-out infinite; }
+  @keyframes gspin { to { transform: rotate(360deg); } }
+  @keyframes gfall { to { stroke-dashoffset: -14; } }
+  @keyframes gflash { 0%, 100% { opacity: .35; } 45% { opacity: 1; } }
+  @keyframes gdrift { 0%, 100% { transform: translateX(-2px); } 50% { transform: translateX(3px); } }
+  @media (prefers-reduced-motion: reduce) { .glyph * { animation: none !important; } }
+
   /* Feixe: uma linha de luz que sai do núcleo e aponta a informação de que ele está tratando. */
   #beamfx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 4; }
   .lit, .lit i { color: var(--purple) !important; text-shadow: 0 0 12px var(--green); transition: color .3s, text-shadow .3s; }
@@ -440,7 +457,7 @@
     else if (a.action === 'conversation_on' || a.action === 'conversation_off') go($('handsfree'), () => { if (handsFree !== (a.action === 'conversation_on')) $('handsfree').click(); });
   }
   // Comandos sem hora marcada (vieram da ferramenta): um depois do outro.
-  function runActions(list) { for (const a of list || []) runActionVia(a, point); }
+  function runActions(list) { for (const a of list || []) { if (a.action === 'show') spawnGlyph(a.target, performance.now() + SPAN_GROW, 1400); else runActionVia(a, point); } }
 
   // Deixas: gestos que ele marcou dentro da fala. Cada uma tem a posição no texto; o app acompanha
   // o andamento da voz e dispara o feixe quando ela chega naquele ponto. Devolve uma função que,
@@ -481,9 +498,41 @@
     }, 25);
     return () => { clearInterval(timer); for (const c of pending.splice(0)) runCue(c, performance.now() + SPAN_GROW, 700); };
   }
+  // ---------- Símbolos de luz ----------
+  const CLOUD = '<path d="M19 44h27a10 10 0 0 0 1.5-19.9A14 14 0 0 0 20.6 27 8.6 8.6 0 0 0 19 44z"/>';
+  const RAYS = (cx, cy, r1, r2) => Array.from({ length: 8 }, (_, i) => { const a = (i * Math.PI) / 4; return `<line x1="${(cx + Math.cos(a) * r1).toFixed(1)}" y1="${(cy + Math.sin(a) * r1).toFixed(1)}" x2="${(cx + Math.cos(a) * r2).toFixed(1)}" y2="${(cy + Math.sin(a) * r2).toFixed(1)}"/>`; }).join('');
+  const GLYPHS = {
+    sol: `<circle class="hot" cx="32" cy="32" r="10.5"/><g class="spin hot">${RAYS(32, 32, 16, 23)}</g>`,
+    lua: '<path class="hot" d="M41 13a20 20 0 1 0 10 33A16.5 16.5 0 0 1 41 13z"/><circle class="tw hot" cx="17" cy="17" r=".9"/><circle class="tw hot" cx="24" cy="50" r=".9" style="animation-delay:.8s"/>',
+    nuvem: `<g class="drift">${CLOUD}</g>`,
+    parcial: `<circle class="hot" cx="22" cy="24" r="7.5"/><g class="spin2 hot">${RAYS(22, 24, 11.5, 15.5)}</g><g class="drift">${CLOUD}</g>`,
+    chuva: `${CLOUD}<line class="drop hot" x1="24" y1="49" x2="21" y2="60"/><line class="drop hot" x1="33" y1="49" x2="30" y2="60" style="animation-delay:.3s"/><line class="drop hot" x1="42" y1="49" x2="39" y2="60" style="animation-delay:.6s"/>`,
+    tempestade: `${CLOUD}<path class="hot flash" d="M35 45l-7 10h7l-4 9"/><line class="drop" x1="22" y1="49" x2="20" y2="57"/><line class="drop" x1="45" y1="49" x2="43" y2="57" style="animation-delay:.4s"/>`,
+    vento: '<g class="drift"><path d="M10 24h28a6 6 0 1 0-6-6"/><path class="hot" d="M10 33h38a6 6 0 1 1-6 6"/><path d="M14 42h16a5 5 0 1 1-5 5"/></g>',
+    neve: `${CLOUD}<g class="hot tw"><path d="M24 51v7M21 54.5h6"/></g><g class="hot tw" style="animation-delay:.7s"><path d="M33 53v7M30 56.5h6"/></g><g class="hot tw" style="animation-delay:1.3s"><path d="M42 51v7M39 54.5h6"/></g>`,
+  };
+  let glyphSide = 1;
+  // O feixe vai até um ponto ao lado da esfera e o símbolo se forma ali quando a ponta chega; some ao fim do trecho.
+  function spawnGlyph(name, arriveAt, hold) {
+    if (!GLYPHS[name] || view !== 'nucleo') return;
+    const o = viz.getBoundingClientRect(), cx = o.left + o.width / 2, cy = o.top + o.height / 2;
+    glyphSide = -glyphSide; // alterna os lados, para dois símbolos seguidos não nascerem um sobre o outro
+    const ang = (-90 + glyphSide * (38 + Math.random() * 22)) * Math.PI / 180, dist = o.width * (.6 + Math.random() * .06);
+    const el = document.createElement('div');
+    el.className = 'glyph';
+    el.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true">${GLYPHS[name]}</svg>`;
+    el.style.left = Math.max(46, Math.min(innerWidth - 46, cx + Math.cos(ang) * dist)) + 'px';
+    el.style.top = Math.max(46, cy + Math.sin(ang) * dist) + 'px';
+    document.body.appendChild(el);
+    const stay = Math.max(1600, hold + 900);
+    pointSpan(el, () => { el.classList.add('on'); hud(`materializando · <b>${esc(name)}</b>`); }, arriveAt, Math.min(stay, 1400));
+    setTimeout(() => { el.classList.remove('on'); setTimeout(() => el.remove(), 700); }, Math.max(0, arriveAt - performance.now()) + stay);
+  }
+
   // Uma deixa vira um feixe com hora marcada: chega no começo da palavra e fica até o fim dela.
   function runCue(c, arriveAt, hold) {
     const t = c.target, span = (target, fn) => pointSpan(target, fn, arriveAt, hold);
+    if (c.action === 'show') return spawnGlyph(t, arriveAt, hold);
     if (c.action === 'point') { if (t === 'numeros') span(document.querySelector('.stats'), () => {}); else if (AIMS[t]) span(AIMS[t], () => {}); }
     else runActionVia(c, span);
   }

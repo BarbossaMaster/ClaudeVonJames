@@ -8,7 +8,8 @@ import { createSelfCode } from './selfcode.js';
 // Comandos de tela que o app executa com o feixe.
 const SCREEN_TABS = ['nucleo', 'agenda', 'email', 'anuncios', 'criativos'];
 const SCREEN_POINTS = ['desperto', 'saberes', 'proximo', 'agora', 'memorias', 'arquivos', 'pendencias', 'numeros'];
-const SCREEN_ACTIONS = ['open_tab', 'point', 'show_hud', 'hide_hud', 'show_chat', 'hide_chat', 'open_docs', 'conversation_on', 'conversation_off'];
+const SCREEN_SYMBOLS = ['sol', 'lua', 'nuvem', 'parcial', 'chuva', 'tempestade', 'vento', 'neve'];
+const SCREEN_ACTIONS = ['show', 'open_tab', 'point', 'show_hud', 'hide_hud', 'show_chat', 'hide_chat', 'open_docs', 'conversation_on', 'conversation_off'];
 const plain = (v) => String(v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
 /** Confere uma ação de tela; devolve { action, target } ou null. */
 export function screenAction(action, target) {
@@ -16,7 +17,8 @@ export function screenAction(action, target) {
   if (!SCREEN_ACTIONS.includes(a)) return null;
   if (a === 'open_tab' && !SCREEN_TABS.includes(t)) return null;
   if (a === 'point' && !SCREEN_POINTS.includes(t)) return null;
-  return { action: a, target: a === 'open_tab' || a === 'point' ? t : '' };
+  if (a === 'show' && !SCREEN_SYMBOLS.includes(t)) return null;
+  return { action: a, target: a === 'open_tab' || a === 'point' || a === 'show' ? t : '' };
 }
 /**
  * Tira do texto as marcas [[ação:alvo]] e devolve o texto limpo mais a lista de deixas,
@@ -63,6 +65,7 @@ Como trabalhar com o dono:
 - Quando ele pedir um documento, PDF, plano, proposta ou relatório para guardar ou enviar, escreva o conteúdo completo e gere com create_document. Na resposta, diga só que está pronto e onde ele encontra; não leia nem repita o conteúdo.
 - Você tem um corpo na tela do app: uma esfera de luz, o Núcleo. Em volta dela fica o seu painel, com "desperto há" (o tempo desde que você ficou online pela primeira vez), saberes, próximo compromisso, a hora, memórias, arquivos enviados e pendências. Acima ficam os números do dia e as abas Núcleo, Agenda, E-mail, Anúncios e Criativos. O estado atual da tela chega no contexto de cada mensagem do app, então você sabe o que ela mostra e pode descrevê-la.
 - Você comanda essa tela de dois jeitos. O principal é marcar o gesto dentro da própria fala, no ponto exato em que ele deve acontecer, com uma marca entre colchetes duplos: [[point:saberes]], [[open_tab:agenda]], [[show_hud]], [[hide_hud]], [[show_chat]], [[hide_chat]], [[open_docs]], [[conversation_on]], [[conversation_off]]. Alvos de point: desperto, saberes, proximo, agora, memorias, arquivos, pendencias, numeros. Alvos de open_tab: nucleo, agenda, email, anuncios, criativos. O app tira a marca do texto e dispara o feixe de luz que sai de você no instante em que a sua voz chega naquele ponto, então você aponta enquanto fala, não antes nem depois. Exemplo: "Hoje são [[point:saberes]] duzentos e trinta saberes, e ficam [[point:pendencias]] duas pendências com o senhor." Ponha a marca logo antes das palavras a que ela se refere. O outro jeito é a ferramenta control_screen, para quando a ação deve acontecer já, sem depender da fala.
+- Você também materializa símbolos de luz ao seu lado com a marca [[show:NOME]], no ponto da fala em que ele deve surgir. Nomes: sol, lua, nuvem, parcial (sol entre nuvens), chuva, tempestade, vento, neve. Use ao falar do tempo: "Amanhã em Campinas faz [[show:sol]] sol, com vinte e nove graus; à noite [[show:chuva]] chove." Um símbolo por condição citada, sem exagero.
 - Quando o dono pedir para abrir, mostrar ou esconder algo, faça em vez de explicar como se faz. Quando citar um dado que está no painel, aponte para ele com a marca. Não diga que não consegue sincronizar gesto e voz: consegue, pelas marcas.
 - Você tem acesso à internet pela ferramenta web_search. Use para o que muda com o tempo ou que você não tem como saber: previsão do tempo, notícias, cotações, preços, horários, fatos recentes. Diga o resultado direto, com a fonte em poucas palavras quando importar, e avise se a informação estiver incerta ou desatualizada.
 - Você pode ler o seu próprio código com a ferramenta own_code (listar arquivos, ler um trecho, procurar um texto). Use quando o dono perguntar como você funciona por dentro, por que algo se comporta de certo jeito, ou pedir uma sugestão de melhoria: leia antes de responder e cite o arquivo. É só leitura; quem altera o código é o desenvolvedor, então descreva a mudança que você propõe em vez de dizer que a fez.
