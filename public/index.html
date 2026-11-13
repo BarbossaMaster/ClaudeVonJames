@@ -778,7 +778,8 @@
     const box = document.createElement('div');
     box.className = 'doc';
     const a = document.createElement('a');
-    a.href = d.url; a.target = '_blank'; a.rel = 'noopener';
+    a.href = d.url; a.rel = 'noopener';
+    a.download = (d.title.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'documento') + '.pdf';
     a.innerHTML = DOC_ICON;
     const s = document.createElement('span'); s.textContent = d.title; a.appendChild(s);
     const m = document.createElement('small');
